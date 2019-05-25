@@ -40,3 +40,16 @@ together.
 + Quoted elements match any input but must be surrounded by quotes.  To use a
   quoted element in your command use `[key]` where `key` can be any name that
   represents that particular input element.  
+
+## Command Handlers
+Functions are used as handlers for commands.  Specifically handler functions
+must use the following signature: `(Args<'_>) -> Result`.
+
+## Args
+The `Args` type encapsulated the parameters extracted from the input as well as
+the `Message` and `Context` types from the Serenity crate.  
+
+### Serenity
+The library the bot uses to communicate with discord is called Serenity.
+Serenity abstracts all communication with discord into methods available through
+the `Message` and `Context` types.  
