@@ -37,6 +37,9 @@ RUN cargo build --release
 # source code didn't change thanks to mtime weirdness.
 RUN rm -rf /tmp/source/src
 COPY src /tmp/source/src
+RUN mkdir /tmp/source/migrations
+COPY migrations /tmp/source/migrations
+RUN ls /tmp/source/migrations/
 RUN find -name "*.rs" -exec touch {} \; && cargo build --release
 
 ##################
@@ -47,7 +50,10 @@ FROM ubuntu:bionic AS binary
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libsqlite3-dev \
+    sqlite3 \
     ca-certificates
 
 COPY --from=build /tmp/source/target/release/rustlang_discord_mod_bot /usr/local/bin/
+RUN mkdir /usr/local/bin/migrations && mkdir /opt/bot
+COPY --from=build /tmp/source/migrations /usr/local/bin/migrations
 CMD rustlang_discord_mod_bot

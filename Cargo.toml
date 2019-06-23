@@ -4,18 +4,14 @@ version = "0.1.0"
 authors = ["technetos <mrgould93@gmail.com>"]
 edition = "2018"
 license = "MIT"
-build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 serenity = { version = "0.6.0-rc.0", features = ["cache", "model"] }
 diesel = { version = "1.4.0", features = ["sqlite", "chrono"] }
+diesel_migrations = { version = "1.4.0", features = ["sqlite"] }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 chrono = "0.4"
-
-[build-dependencies]
-diesel = { version = "1.4.0", features = ["sqlite"] }
-diesel_migrations = { version = "1.4.0", features = ["sqlite"] }
