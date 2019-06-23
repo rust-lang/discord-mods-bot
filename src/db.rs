@@ -8,7 +8,6 @@ pub(crate) fn database_connection() -> StdResult<SqliteConnection, Box<std::erro
 }
 
 pub(crate) fn run_migrations() -> StdResult<(), Box<std::error::Error>> {
-    //let migrations_dir = diesel_migrations::find_migrations_directory()?;
     let migrations_dir = std::env::var("MIGRATIONS_DIR")
         .map(|p| std::path::PathBuf::from(p))
         .unwrap_or_else(|_| std::path::PathBuf::from("migrations"));
