@@ -4,13 +4,13 @@ use crate::{
 };
 use serenity::model::prelude::*;
 
-/// Send a reply to the channel the message was received on.  
+/// Send a reply to the channel the message was received on.
 pub(crate) fn send_reply(args: &Args, message: &str) -> Result<()> {
     args.msg.channel_id.say(&args.cx, message)?;
     Ok(())
 }
 
-/// Determine if a member sending a message has the `Role`.  
+/// Determine if a member sending a message has the `Role`.
 pub(crate) fn has_role(args: &Args, role: &RoleId) -> Result<bool> {
     Ok(args
         .msg
@@ -21,7 +21,7 @@ pub(crate) fn has_role(args: &Args, role: &RoleId) -> Result<bool> {
         .contains(role))
 }
 
-/// Return whether or not the user is a mod.  
+/// Return whether or not the user is a mod.
 pub(crate) fn is_mod(args: &Args) -> Result<bool> {
     use std::str::FromStr;
 

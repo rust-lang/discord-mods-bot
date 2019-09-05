@@ -27,17 +27,17 @@ impl MessageCache {
     ) -> Result<Option<(i32, String, String, String)>> {
         let conn = database_connection()?;
 
-        Ok(messages::table
+        messages::table
             .filter(messages::name.eq(name.into()))
-            .load::<(i32, String, String, String)>(&conn)?
-            .into_iter()
-            .nth(0))
+            .first::<(i32, String, String, String)>(&conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     pub(crate) fn update_by_id(id: i32, message: MessageId, channel: ChannelId) -> Result<()> {
         let conn = database_connection()?;
 
-        diesel::update(messages::table.filter(messages::id.eq(id)))
+        diesel::update(messages::table.find(id))
             .set((
                 messages::message.eq(message.0.to_string()),
                 messages::channel.eq(channel.0.to_string()),
@@ -62,17 +62,17 @@ impl RoleIdCache {
     pub(crate) fn get_by_name(name: impl Into<String>) -> Result<Option<(i32, String, String)>> {
         let conn = database_connection()?;
 
-        Ok(roles::table
+        roles::table
             .filter(roles::name.eq(name.into()))
-            .load::<(i32, String, String)>(&conn)?
-            .into_iter()
-            .nth(0))
+            .first::<(i32, String, String)>(&conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     pub(crate) fn update_by_id(id: i32, role: &str) -> Result<()> {
         let conn = database_connection()?;
 
-        diesel::update(roles::table.filter(roles::id.eq(id)))
+        diesel::update(roles::table.find(id))
             .set(roles::role.eq(role))
             .execute(&conn)?;
         Ok(())
@@ -94,17 +94,17 @@ impl UserIdCache {
     pub(crate) fn get_by_name(name: impl Into<String>) -> Result<Option<(i32, String, String)>> {
         let conn = database_connection()?;
 
-        Ok(users::table
+        users::table
             .filter(users::name.eq(name.into()))
-            .load::<(i32, String, String)>(&conn)?
-            .into_iter()
-            .nth(0))
+            .first::<(i32, String, String)>(&conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     pub(crate) fn update_by_id(id: i32, name: &str, user_id: &str) -> Result<()> {
         let conn = database_connection()?;
 
-        diesel::update(users::table.filter(users::id.eq(id)))
+        diesel::update(users::table.find(id))
             .set((users::name.eq(name), users::user_id.eq(user_id)))
             .execute(&conn)?;
         Ok(())
