@@ -3,12 +3,14 @@ use serenity::{model::channel::Message, prelude::Context};
 use std::collections::HashMap;
 
 const PREFIX: &'static str = "?";
+const INLINE_START: u8 = b'(';
+const INLINE_END: u8 = b')';
 pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 pub(crate) type CmdPtr = for<'m> fn(Args<'m>) -> Result<()>;
 
 pub struct Args<'m> {
-    pub cx: Context,
-    pub msg: Message,
+    pub cx: &'m Context,
+    pub msg: &'m Message,
     pub params: HashMap<&'m str, &'m str>,
 }
 
@@ -59,20 +61,49 @@ impl Commands {
     }
 
     pub(crate) fn execute<'m>(&'m self, cx: Context, msg: Message) {
-        if !msg.is_own(&cx) && msg.content.starts_with(PREFIX) {
-            let message = &msg.content.clone();
-            self.state_machine.process(&message).map(|matched| {
-                info!("Executing command {}", message);
-                let args = Args {
-                    cx,
-                    msg,
-                    params: matched.params,
-                };
-                if let Err(e) = (matched.handler)(args) {
-                    println!("{}", e);
-                }
-            });
+        if !msg.is_own(&cx) {
+            for message in find_commands(&msg.content) {
+                self.state_machine.process(&message).map(|matched| {
+                    info!("Executing command {}", message);
+                    let args = Args {
+                        cx: &cx,
+                        msg: &msg,
+                        params: matched.params,
+                    };
+                    if let Err(e) = (matched.handler)(args) {
+                        println!("{}", e);
+                    }
+                });
+            }
         }
+    }
+}
+
+#[inline]
+fn find_commands(message: &str) -> Vec<&str> {
+    if message.starts_with(PREFIX) {
+        vec![message]
+    } else {
+        let mut starts = vec![];
+        let mut cmds = vec![];
+
+        for (i, c) in message.bytes().enumerate() {
+            match c {
+                INLINE_START => starts.push(i + 1),
+                INLINE_END => {
+                    if !starts.is_empty() {
+                        let s = starts.pop().unwrap();
+                        let message = &message[s..i];
+                        if message.starts_with(PREFIX) {
+                            cmds.push(message);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        cmds
     }
 }
 
