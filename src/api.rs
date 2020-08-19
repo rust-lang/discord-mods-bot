@@ -40,6 +40,7 @@ pub(crate) fn is_mod(args: &Args) -> Result<bool> {
     check_permission(args, role.map(|(_, role_id, _)| role_id))
 }
 
+#[cfg(any(feature = "crates", feature = "tags"))]
 pub(crate) fn is_wg_and_teams(args: &Args) -> Result<bool> {
     let role = roles::table
         .filter(roles::name.eq("wg_and_teams"))

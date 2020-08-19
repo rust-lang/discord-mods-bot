@@ -7,6 +7,10 @@ license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+tags = []
+crates = []
+
 [dependencies]
 serenity = { version = "0.8.0", features = ["cache", "model"] }
 diesel = { version = "1.4.0", features = ["postgres", "r2d2"] }
