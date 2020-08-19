@@ -85,7 +85,6 @@ fn app() -> Result {
 
     #[cfg(feature = "crates")]
     {
-
         // crates.io
         cmds.add("?crate help", crates::help);
         cmds.add("?crate query...", crates::search);
