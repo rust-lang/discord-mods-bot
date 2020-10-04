@@ -1,31 +1,19 @@
 # Discord Mods Bot
 A discord bot written in rust.  
 
-# [Getting Started](GETTING_STARTED.md)
-# [Commands](COMMANDS.md)
-
-# Features
+### Features
 The following commands are currently supported by the bot
 
-## Tags
+#### Tags
 Tags are a simple key value store.  
 
-Lookup a tag
-```
-?tag {key}
-```
-Create a tag
-```
-?tags create {key} value...
-```
-Delete a tag
-```
-?tags delete {key}
-```
-Get all tags
-```
-?tags
-```
+Command | Description
+--- | ---
+?tags create {key} value...   | Create a tag.  Limited to WG & Teams. 
+?tags delete {key}            | Delete a tag.  Limited to WG & Teams.
+?tags help                    | This menu.
+?tags                         | Get all the tags.
+?tag {key}                    | Get a specific tag.
 
 ### Crates
 Search for a crate on crates.io
@@ -60,3 +48,6 @@ Used for assigning talk roles.
 ```
 ?CoC {channel}
 ```
+# [Getting Started](GETTING_STARTED.md)
+# [Commands](COMMANDS.md)
+
