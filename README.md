@@ -7,13 +7,30 @@ The following commands are currently supported by the bot
 #### Tags
 Tags are a simple key value store.  
 
-Command | Description
---- | ---
-?tags create {key} value...   | Create a tag.  Limited to WG & Teams. 
-?tags delete {key}            | Delete a tag.  Limited to WG & Teams.
-?tags help                    | This menu.
-?tags                         | Get all the tags.
-?tag {key}                    | Get a specific tag.
+The `create` and `delete` tag commands are limited to users with the WG & Teams
+role.  
+
+Create a new tag.
+```
+?tags create {key} value...
+```
+
+Delete a tag. 
+```
+?tags delete {key}
+```
+
+The next two commands can be used to lookup tags.  
+
+Get a specific tag.
+```
+?tag {key}
+```
+
+Get all the tags.
+```
+?tags
+```
 
 ### Crates
 Search for a crate on crates.io
