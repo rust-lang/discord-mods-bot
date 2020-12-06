@@ -254,8 +254,26 @@ impl EventHandler for Events {
         _: Option<Message>,
         ev: MessageUpdateEvent,
     ) {
-        if let Err(e) = command_history::replay_message(cx, ev, &self.cmds) {
-            error!("{}", e);
+        let age = ev.timestamp.and_then(|create| {
+            ev.edited_timestamp
+                .and_then(|edit| edit.signed_duration_since(create).to_std().ok())
+        });
+
+        if age.is_some() && age.unwrap() < MESSAGE_AGE_MAX {
+            let mut msg = CustomMessage::new();
+            msg.id(ev.id)
+                .channel_id(ev.channel_id)
+                .content(ev.content.unwrap_or_else(|| String::new()));
+
+            let msg = msg.build();
+
+            if msg.content.starts_with(commands::PREFIX) {
+                info!(
+                    "sending edited message - {:?} {:?}",
+                    msg.content, msg.author
+                );
+                self.cmds.execute(cx, &msg);
+            }
         }
     }
 
