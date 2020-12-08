@@ -9,8 +9,7 @@ use serenity::{model::channel::Message, prelude::Context};
 use std::{collections::HashMap, sync::Arc};
 
 pub(crate) const PREFIX: &'static str = "?";
-pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-pub(crate) type GuardFn = fn(&Args) -> Result<bool>;
+pub(crate) type GuardFn = fn(&Args) -> Result<bool, Error>;
 
 struct Command {
     guard: GuardFn,
