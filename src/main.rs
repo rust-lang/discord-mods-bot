@@ -224,7 +224,6 @@ fn main() {
 
     if let Err(e) = app() {
         error!("{}", e);
-        std::process::exit(1);
     }
 }
 
