@@ -49,18 +49,22 @@ fn check_permission(args: &Args, role: Option<String>) -> Result<bool, Error> {
 
 /// Return whether or not the user is a mod.  
 pub(crate) fn is_mod(args: &Args) -> Result<bool, Error> {
+    let db = DB.get()?;
+
     let role = roles::table
         .filter(roles::name.eq("mod"))
-        .first::<(i32, String, String)>(&DB.get()?)
+        .first::<(i32, String, String)>(&db)
         .optional()?;
 
     check_permission(args, role.map(|(_, role_id, _)| role_id))
 }
 
 pub(crate) fn is_wg_and_teams(args: &Args) -> Result<bool, Error> {
+    let db = DB.get()?;
+
     let role = roles::table
         .filter(roles::name.eq("wg_and_teams"))
-        .first::<(i32, String, String)>(&DB.get()?)
+        .first::<(i32, String, String)>(&db)
         .optional()?;
 
     check_permission(args, role.map(|(_, role_id, _)| role_id))
