@@ -18,8 +18,7 @@ struct Crate {
     #[serde(rename = "updated_at")]
     updated: String,
     downloads: u64,
-    #[serde(default)]
-    description: String,
+    description: Option<String>,
     documentation: Option<String>,
 }
 
@@ -29,13 +28,16 @@ fn get_crate(args: &Args) -> Result<Option<Crate>, Error> {
         .get("query")
         .ok_or("Unable to retrieve param: query")?;
 
-    info!("searching for crate `{}`", query);
+    let mut query_iter = query.splitn(2, "::");
+    let crate_name = query_iter.next().unwrap();
+
+    info!("searching for crate `{}`", crate_name);
 
     let crate_list = args
         .http
         .get("https://crates.io/api/v1/crates")
         .header(header::USER_AGENT, USER_AGENT)
-        .query(&[("q", query)])
+        .query(&[("q", crate_name)])
         .send()?
         .json::<Crates>()?;
 
@@ -48,7 +50,7 @@ pub fn search(args: Args) -> Result<(), Error> {
             m.embed(|e| {
                 e.title(&krate.name)
                     .url(format!("https://crates.io/crates/{}", krate.id))
-                    .description(&krate.description)
+                    .description(krate.description.unwrap_or_default())
                     .field("version", &krate.version, true)
                     .field("downloads", &krate.downloads, true)
                     .timestamp(krate.updated.as_str())
