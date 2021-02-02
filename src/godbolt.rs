@@ -49,7 +49,7 @@ pub fn compile_rust_source(
         )?
         .json()?;
 
-    dbg!(&response);
+    info!("raw godbolt response: {:#?}", &response);
 
     Ok(if response.code == 0 {
         Compilation::Success {
