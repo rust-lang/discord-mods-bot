@@ -134,10 +134,10 @@ struct PlayResult {
 fn run_code(args: &Args, code: &str) -> Result<String, Error> {
     let mut errors = String::new();
 
-    let warnings = args.params.get("warn").unwrap_or_else(|| &"false");
-    let channel = args.params.get("channel").unwrap_or_else(|| &"nightly");
-    let mode = args.params.get("mode").unwrap_or_else(|| &"debug");
-    let edition = args.params.get("edition").unwrap_or_else(|| &"2018");
+    let warnings = args.params.get("warn").unwrap_or(&"false");
+    let channel = args.params.get("channel").unwrap_or(&"nightly");
+    let mode = args.params.get("mode").unwrap_or(&"debug");
+    let edition = args.params.get("edition").unwrap_or(&"2018");
 
     let mut request = PlaygroundCode::new(code);
 
