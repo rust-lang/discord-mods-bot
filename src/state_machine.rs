@@ -94,7 +94,6 @@ impl CharacterSet {
         chs.iter().for_each(|ch| chars.insert(*ch));
         chars
     }
-            
 }
 
 pub(crate) struct State<T> {
