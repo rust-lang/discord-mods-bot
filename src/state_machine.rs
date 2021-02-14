@@ -34,31 +34,33 @@ impl CharacterSet {
         match val {
             0..=63 => {
                 let bit = 1 << val;
-                self.low_mask = self.low_mask | bit;
+                self.low_mask |= bit;
             }
             64..=127 => {
                 let bit = 1 << val - 64;
-                self.high_mask = self.high_mask | bit;
+                self.high_mask |= bit;
             }
             _ => {}
         }
     }
 
-    /// Remove a character from the character set.   
-    pub(crate) fn remove(&mut self, ch: char) {
-        let val = ch as u32 - 1;
+    /// Remove characters from the character set.   
+    pub(crate) fn remove(&mut self, chs: &[char]) {
+        chs.iter().for_each(|ch| {
+            let val = *ch as u32 - 1;
 
-        match val {
-            0..=63 => {
-                let bit = 1 << val;
-                self.low_mask = self.low_mask & !bit;
+            match val {
+                0..=63 => {
+                    let bit = 1 << val;
+                    self.low_mask &= !bit;
+                }
+                64..=127 => {
+                    let bit = 1 << val - 64;
+                    self.high_mask &= !bit;
+                }
+                _ => {}
             }
-            64..=127 => {
-                let bit = 1 << val - 64;
-                self.high_mask = self.high_mask & !bit;
-            }
-            _ => {}
-        }
+        });
     }
 
     /// Check if the character `ch` is a member of the character set.  
@@ -85,6 +87,14 @@ impl CharacterSet {
         chars.insert(ch);
         chars
     }
+
+    /// Insert the characters `chs` into the character set.  
+    pub(crate) fn from_chars(chs: &[char]) -> Self {
+        let mut chars = Self::new();
+        chs.iter().for_each(|ch| chars.insert(*ch));
+        chars
+    }
+            
 }
 
 pub(crate) struct State<T> {
