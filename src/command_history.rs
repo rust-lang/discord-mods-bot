@@ -28,7 +28,7 @@ pub(crate) fn replay_message(
         let mut msg = CustomMessage::new();
         msg.id(ev.id)
             .channel_id(ev.channel_id)
-            .content(ev.content.unwrap_or_else(|| String::new()));
+            .content(ev.content.unwrap_or_default());
 
         let msg = msg.build();
 

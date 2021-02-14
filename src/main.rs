@@ -24,7 +24,6 @@ mod welcome;
 use crate::db::DB;
 use commands::{Args, Commands, GuardFn};
 use diesel::prelude::*;
-use envy;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serenity::{model::prelude::*, prelude::*};
@@ -73,7 +72,7 @@ fn init_data(config: &Config) -> Result<(), Error> {
                 let wg_and_teams_role = config
                     .wg_and_teams_id
                     .as_ref()
-                    .ok_or_else(|| text::WG_AND_TEAMS_MISSING_ENV_VAR)?;
+                    .ok_or(text::WG_AND_TEAMS_MISSING_ENV_VAR)?;
                 upsert_role("wg_and_teams", &wg_and_teams_role)?;
             }
 

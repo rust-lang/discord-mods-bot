@@ -8,7 +8,7 @@ use reqwest::blocking::Client as HttpClient;
 use serenity::{model::channel::Message, prelude::Context};
 use std::{collections::HashMap, sync::Arc};
 
-pub(crate) const PREFIX: &'static str = "?";
+pub(crate) const PREFIX: &str = "?";
 pub(crate) type GuardFn = fn(&Args) -> Result<bool, Error>;
 
 struct Command {
@@ -96,9 +96,9 @@ impl Commands {
                         state = self.add_code_segment_multi_line(state, segment);
                     } else if segment.starts_with("```") && segment.ends_with("```") {
                         state = self.add_code_segment_single_line(state, 3, segment);
-                    } else if segment.starts_with("`") && segment.ends_with("`") {
+                    } else if segment.starts_with('`') && segment.ends_with('`') {
                         state = self.add_code_segment_single_line(state, 1, segment);
-                    } else if segment.starts_with("{") && segment.ends_with("}") {
+                    } else if segment.starts_with('{') && segment.ends_with('}') {
                         state = self.add_dynamic_segment(state, segment);
                     } else if segment.ends_with("...") {
                         state = self.add_remaining_segment(state, segment);
@@ -122,7 +122,7 @@ impl Commands {
             });
         } else {
             self.state_machine.set_final_state(state);
-            self.state_machine.set_handler(state, handler.clone());
+            self.state_machine.set_handler(state, handler);
         }
     }
 
@@ -166,7 +166,7 @@ impl Commands {
         self.menu.take()
     }
 
-    pub(crate) fn execute<'m>(&'m self, cx: Context, msg: &Message) {
+    pub(crate) fn execute(&self, cx: Context, msg: &Message) {
         let message = &msg.content;
         if !msg.is_own(&cx) && message.starts_with(PREFIX) {
             self.state_machine.process(message).map(|matched| {
@@ -201,8 +201,7 @@ impl Commands {
 
     fn add_space(&mut self, mut state: usize, i: usize) -> usize {
         if i > 0 {
-            let mut char_set = CharacterSet::from_char(' ');
-            char_set.insert('\n');
+            let char_set = CharacterSet::from_chars(&[' ', '\n']);
 
             state = self.state_machine.add(state, char_set);
             self.state_machine.add_next_state(state, state);
@@ -226,7 +225,7 @@ impl Commands {
         let name = &s[1..s.len() - 1];
 
         let mut char_set = CharacterSet::any();
-        char_set.remove(' ');
+        char_set.remove(&[' ']);
         state = self.state_machine.add(state, char_set);
         self.state_machine.add_next_state(state, state);
         self.state_machine.start_parse(state, name);
@@ -257,9 +256,7 @@ impl Commands {
         let lambda = state;
 
         let mut char_set = CharacterSet::any();
-        char_set.remove('`');
-        char_set.remove(' ');
-        char_set.remove('\n');
+        char_set.remove(&['`', ' ', '\n']);
         state = self.state_machine.add(state, char_set);
         self.state_machine.add_next_state(state, state);
 
@@ -310,8 +307,7 @@ impl Commands {
         state = self.state_machine.add(state, CharacterSet::from_char('='));
 
         let mut char_set = CharacterSet::any();
-        char_set.remove(' ');
-        char_set.remove('\n');
+        char_set.remove(&[' ', '\n']);
         state = self.state_machine.add(state, char_set);
         self.state_machine.add_next_state(state, state);
         self.state_machine.start_parse(state, name);
@@ -323,7 +319,7 @@ impl Commands {
 
 fn key_value_pair(s: &'static str) -> Option<&'static str> {
     s.match_indices("={}")
-        .nth(0)
+        .next()
         .map(|pair| {
             let name = &s[0..pair.0];
             if name.len() > 0 {
