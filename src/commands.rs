@@ -68,6 +68,11 @@ impl Commands {
         let mut opt_lambda_state = None;
         let mut opt_final_states = vec![];
 
+        let handler = Arc::new(Command {
+            guard,
+            ptr: Box::new(handler),
+        });
+
         command
             .split(' ')
             .filter(|segment| segment.len() > 0)
@@ -90,18 +95,25 @@ impl Commands {
                 } else {
                     opt_lambda_state = None;
                     opt_final_states.truncate(0);
+                    let last_state = state;
                     state = self.add_space(state, i);
 
                     if segment.starts_with("```\n") && segment.ends_with("```") {
                         state = self.add_code_segment_multi_line(state, segment);
                     } else if segment.starts_with("```") && segment.ends_with("```") {
-                        state = self.add_code_segment_single_line(state, 3, segment);
+                        state = self.add_code_segment_single_line(state, segment, 3);
                     } else if segment.starts_with('`') && segment.ends_with('`') {
-                        state = self.add_code_segment_single_line(state, 1, segment);
+                        state = self.add_code_segment_single_line(state, segment, 1);
                     } else if segment.starts_with('{') && segment.ends_with('}') {
                         state = self.add_dynamic_segment(state, segment);
                     } else if segment.ends_with("...") {
-                        state = self.add_remaining_segment(state, segment);
+                        if segment == "..." {
+                            self.state_machine.set_final_state(last_state);
+                            self.state_machine.set_handler(last_state, handler.clone());
+                            state = self.add_unnamed_remaining_segment(last_state);
+                        } else {
+                            state = self.add_remaining_segment(state, segment);
+                        }
                     } else {
                         segment.chars().for_each(|ch| {
                             state = self.state_machine.add(state, CharacterSet::from_char(ch))
@@ -109,11 +121,6 @@ impl Commands {
                     }
                 }
             });
-
-        let handler = Arc::new(Command {
-            guard,
-            ptr: Box::new(handler),
-        });
 
         if opt_lambda_state.is_some() {
             opt_final_states.iter().for_each(|state| {
@@ -246,6 +253,14 @@ impl Commands {
         state
     }
 
+    fn add_unnamed_remaining_segment(&mut self, mut state: usize) -> usize {
+        let char_set = CharacterSet::any();
+        state = self.state_machine.add(state, char_set);
+        self.state_machine.add_next_state(state, state);
+
+        state
+    }
+
     fn add_code_segment_multi_line(&mut self, mut state: usize, s: &'static str) -> usize {
         let name = &s[4..s.len() - 3];
 
@@ -279,8 +294,8 @@ impl Commands {
     fn add_code_segment_single_line(
         &mut self,
         mut state: usize,
-        n_backticks: usize,
         s: &'static str,
+        n_backticks: usize,
     ) -> usize {
         use std::iter::repeat;
 
