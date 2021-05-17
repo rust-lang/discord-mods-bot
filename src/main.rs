@@ -119,7 +119,7 @@ fn app() -> Result<(), Error> {
     if config.eval {
         // rust playground
         cmds.add(
-            "?play mode={} edition={} channel={} warn={} ```\ncode```",
+            "?play mode={} edition={} channel={} warn={} ```\ncode``` ...",
             playground::run,
         );
         cmds.add("?play code...", playground::err);
@@ -130,15 +130,15 @@ fn app() -> Result<(), Error> {
         );
 
         cmds.add(
-            "?eval mode={} edition={} channel={} warn={} ```\ncode```",
+            "?eval mode={} edition={} channel={} warn={} ```\ncode``` ...",
             playground::eval,
         );
         cmds.add(
-            "?eval mode={} edition={} channel={} warn={} ```code```",
+            "?eval mode={} edition={} channel={} warn={} ```code``` ...",
             playground::eval,
         );
         cmds.add(
-            "?eval mode={} edition={} channel={} warn={} `code`",
+            "?eval mode={} edition={} channel={} warn={} `code` ...",
             playground::eval,
         );
         cmds.add("?eval code...", playground::eval_err);
