@@ -42,6 +42,7 @@ impl<'a> PlaygroundCode<'a> {
         let edition = match self.edition {
             Edition::E2015 => "2015",
             Edition::E2018 => "2018",
+            Edition::E2021 => "2021",
         };
 
         let mode = match self.mode {
@@ -83,6 +84,8 @@ enum Edition {
     E2015,
     #[serde(rename = "2018")]
     E2018,
+    #[serde(rename = "2021")]
+    E2021,
 }
 
 impl FromStr for Edition {
@@ -92,6 +95,7 @@ impl FromStr for Edition {
         match s {
             "2015" => Ok(Edition::E2015),
             "2018" => Ok(Edition::E2018),
+            "2021" => Ok(Edition::E2021),
             _ => Err(format!("invalid edition `{}`", s).into()),
         }
     }
@@ -230,7 +234,7 @@ pub fn help(args: Args, name: &str) -> Result<(), Error> {
 Optional arguments:
     \tmode: debug, release (default: debug)
     \tchannel: stable, beta, nightly (default: nightly)
-    \tedition: 2015, 2018 (default: 2018)
+    \tedition: 2015, 2018, 2021 (default: 2018)
     \twarn: boolean flag to enable compilation warnings
     ",
         name
