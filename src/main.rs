@@ -101,6 +101,11 @@ fn app() -> Result<(), Error> {
             tags::post,
             api::is_wg_and_teams,
         );
+        cmds.add_protected(
+            "?tags update {key} value...",
+            tags::update,
+            api::is_wg_and_teams,
+        );
         cmds.add("?tag {key}", tags::get);
         cmds.add("?tags", tags::get_all);
         cmds.help("?tags", "A key value store", tags::help);
