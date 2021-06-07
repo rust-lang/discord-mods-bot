@@ -51,6 +51,38 @@ pub fn post(args: Args) -> Result<(), Error> {
     Ok(())
 }
 
+/// Update an existing tag.
+pub fn update(args: Args) -> Result<(), Error> {
+    if api::is_wg_and_teams(&args)? {
+        let conn = DB.get()?;
+
+        let key = args
+            .params
+            .get("key")
+            .ok_or("Unable to retrieve param: key")?;
+
+        let value = args
+            .params
+            .get("value")
+            .ok_or("Unable to retrieve param: value")?;
+
+        match diesel::update(tags::table.filter(tags::key.eq(key)))
+            .set(tags::value.eq(value))
+            .execute(&conn)
+        {
+            Ok(_) => args.msg.react(args.cx, "✅")?,
+            Err(_) => api::send_reply(&args, "A database error occurred when updating the tag.")?,
+        }
+    } else {
+        api::send_reply(
+            &args,
+            "Please reach out to a Rust team/WG member to update a tag.",
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Retrieve a value by key from the tags.  
 pub fn get(args: Args) -> Result<(), Error> {
     let conn = DB.get()?;
@@ -97,6 +129,7 @@ pub fn get_all(args: Args) -> Result<(), Error> {
 pub fn help(args: Args) -> Result<(), Error> {
     let help_string = "```
 ?tags create {key} value...     Create a tag.  Limited to WG & Teams.
+?tags update {key} value...     Update a tag.  Limited to WG & Teams.
 ?tags delete {key}              Delete a tag.  Limited to WG & Teams.
 ?tags help                      This menu.
 ?tags                           Get all the tags.
