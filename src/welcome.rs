@@ -7,7 +7,7 @@ use crate::{
     Error,
 };
 use diesel::prelude::*;
-use serenity::{model::prelude::*, prelude::*};
+use serenity::{model::prelude::*, prelude::*, utils::CustomMessage};
 
 /// Write the welcome message to the welcome channel.  
 pub(crate) fn post_message(args: Args) -> Result<(), Error> {
@@ -123,6 +123,72 @@ pub(crate) fn assign_talk_role(cx: &Context, reaction: &Reaction) -> Result<(), 
             }
         }
     }
+    Ok(())
+}
+
+pub(crate) fn update_welcome_message(args: Args) -> Result<(), Error> {
+    use std::str::FromStr;
+
+    let new_message = &args
+        .params
+        .get("message")
+        .ok_or("unable to retrieve message param")?;
+
+    let conn = DB.get()?;
+
+    let (msg, me) = conn
+        .build_transaction()
+        .read_only()
+        .run::<_, Box<dyn std::error::Error>, _>(|| {
+            let msg: Option<_> = messages::table
+                .filter(messages::name.eq("welcome"))
+                .first::<(i32, String, String, String)>(&conn)
+                .optional()?;
+
+            let me: Option<_> = users::table
+                .filter(users::name.eq("me"))
+                .first::<(i32, String, String)>(&conn)
+                .optional()?;
+
+            Ok((msg, me))
+        })?;
+
+    if let Some((_, _, cached_message_id, cached_channel_id)) = msg {
+        if let Some((_, _, user_id)) = me {
+            let mut custom_message = CustomMessage::new();
+
+            custom_message
+                .id(u64::from_str(&cached_message_id)?.into())
+                .author(UserId::from(u64::from_str(&user_id)?).to_user(args.cx)?)
+                .channel_id(u64::from_str(&cached_channel_id)?.into());
+
+            custom_message
+                .build()
+                .edit(args.cx, |m| m.content(new_message))?;
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn update_help(args: Args) -> Result<(), Error> {
+    let help_string = format!(
+        "
+Update the existing welcome message content
+```
+{command}
+```
+**Example:**
+```
+?CoC update my new message
+
+```
+will update the welcome message to \"my new message\"
+",
+        command = "?CoC update message..."
+    );
+
+    api::send_reply(&args, &help_string)?;
     Ok(())
 }
 
