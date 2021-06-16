@@ -7,7 +7,7 @@ use crate::{
     Error,
 };
 use diesel::prelude::*;
-use serenity::{model::prelude::*, prelude::*, utils::CustomMessage};
+use serenity::{model::prelude::*, prelude::*};
 
 /// Write the welcome message to the welcome channel.  
 pub(crate) fn post_message(args: Args) -> Result<(), Error> {
@@ -60,6 +60,8 @@ pub(crate) fn post_message(args: Args) -> Result<(), Error> {
 
         let white_check_mark = ReactionType::from("✅");
         message.react(args.cx, white_check_mark)?;
+
+        cache_welcome_message(args.cx, message)?;
     }
     Ok(())
 }
@@ -134,39 +136,53 @@ pub(crate) fn update_welcome_message(args: Args) -> Result<(), Error> {
         .get("message")
         .ok_or("unable to retrieve message param")?;
 
-    let conn = DB.get()?;
+    let welcome_message_is_not_cached = {
+        let data = args.cx.data.read();
+        !data.contains::<CachedWelcomeMessage>()
+    };
 
-    let (msg, me) = conn
-        .build_transaction()
-        .read_only()
-        .run::<_, Box<dyn std::error::Error>, _>(|| {
-            let msg: Option<_> = messages::table
-                .filter(messages::name.eq("welcome"))
-                .first::<(i32, String, String, String)>(&conn)
-                .optional()?;
+    if welcome_message_is_not_cached {
+        info!("Welcome message not cached, caching");
+        let conn = DB.get()?;
 
-            let me: Option<_> = users::table
-                .filter(users::name.eq("me"))
-                .first::<(i32, String, String)>(&conn)
-                .optional()?;
+        let res = conn
+            .build_transaction()
+            .read_only()
+            .run::<_, Box<dyn std::error::Error>, _>(|| {
+                let res: Option<_> = messages::table
+                    .filter(messages::name.eq("welcome"))
+                    .first::<(i32, String, String, String)>(&conn)
+                    .optional()?;
 
-            Ok((msg, me))
-        })?;
+                Ok(res)
+            })?;
 
-    if let Some((_, _, cached_message_id, cached_channel_id)) = msg {
-        if let Some((_, _, user_id)) = me {
-            let mut custom_message = CustomMessage::new();
+        if let Some((_, _, message_id, channel_id)) = res {
+            let message = ChannelId::from(u64::from_str(&channel_id)?)
+                .message(args.cx, u64::from_str(&message_id)?)?;
 
-            custom_message
-                .id(u64::from_str(&cached_message_id)?.into())
-                .author(UserId::from(u64::from_str(&user_id)?).to_user(args.cx)?)
-                .channel_id(u64::from_str(&cached_channel_id)?.into());
-
-            custom_message
-                .build()
-                .edit(args.cx, |m| m.content(new_message))?;
+            cache_welcome_message(args.cx, message)?;
+        } else {
+            return Err("No welcome message found".into());
         }
     }
+
+    let mut data = args.cx.data.write();
+    let welcome_message = data.get_mut::<CachedWelcomeMessage>().unwrap();
+    welcome_message.edit(args.cx, |m| m.content(new_message))?;
+
+    Ok(())
+}
+
+pub(crate) struct CachedWelcomeMessage;
+
+impl TypeMapKey for CachedWelcomeMessage {
+    type Value = Message;
+}
+
+pub(crate) fn cache_welcome_message(cx: &Context, message: Message) -> Result<(), Error> {
+    let mut data = cx.data.write();
+    data.insert::<CachedWelcomeMessage>(message);
 
     Ok(())
 }
