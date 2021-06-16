@@ -163,7 +163,11 @@ pub(crate) fn update_welcome_message(args: Args) -> Result<(), Error> {
 
             cache_welcome_message(args.cx, message)?;
         } else {
-            return Err("No welcome message found".into());
+            api::send_reply(
+                &args,
+                "No welcome message found, please post the welcome message",
+            )?;
+            return Ok(());
         }
     }
 
