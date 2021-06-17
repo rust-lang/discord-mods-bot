@@ -149,12 +149,18 @@ fn app() -> Result<(), Error> {
         });
     }
 
-    cmds.add("?godbolt ```\ncode```", |args| {
+    cmds.add("?godbolt flags={} version={} ```\ncode```", |args| {
+        let flags = args
+            .params
+            .get("flags")
+            .unwrap_or(&"-Copt-level=3 --edition=2018");
+        let rustc = args.params.get("rustc").unwrap_or(&"nightly");
+
         let code = args
             .params
             .get("code")
             .ok_or("Unable to retrieve param: code")?;
-        let (lang, text) = match godbolt::compile_rust_source(args.http, code)? {
+        let (lang, text) = match godbolt::compile_rust_source(args.http, code, flags, rustc)? {
             godbolt::Compilation::Success { asm } => ("x86asm", asm),
             godbolt::Compilation::Error { stderr } => ("rust", stderr),
         };
@@ -169,12 +175,7 @@ fn app() -> Result<(), Error> {
         Ok(())
     });
     cmds.help("?godbolt", "View assembly using Godbolt", |args| {
-        api::send_reply(
-            &args,
-            "Compile Rust code using https://rust.godbolt.org. Full optimizations are applied. \
-            ```?godbolt ``\u{200B}`code``\u{200B}` ```",
-        )?;
-        Ok(())
+        godbolt::help(args)
     });
 
     // Slow mode.
