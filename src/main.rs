@@ -165,7 +165,7 @@ fn app() -> Result<(), Error> {
             godbolt::Compilation::Error { stderr } => ("rust", stderr),
         };
 
-        reply_potentially_long_text(
+        api::reply_potentially_long_text(
             &args,
             &format!("```{}\n{}", lang, text),
             "\n```",
@@ -230,40 +230,6 @@ fn app() -> Result<(), Error> {
     client.start()?;
 
     Ok(())
-}
-
-/// Send a Discord reply message and truncate the message with a given truncation message if the
-/// text is too long.
-///
-/// Only `text_body` is truncated. `text_end` will always be appended at the end. This is useful
-/// for example for large code blocks. You will want to truncate the code block contents, but the
-/// finalizing \`\`\` should always stay - that's what `text_end` is for.
-fn reply_potentially_long_text(
-    args: &Args,
-    text_body: &str,
-    text_end: &str,
-    truncation_msg: &str,
-) -> Result<(), Error> {
-    let msg = if text_body.len() + text_end.len() > 2000 {
-        // This is how long the text body may be at max to conform to Discord's limit
-        let available_space = 2000 - text_end.len() - truncation_msg.len();
-
-        let mut cut_off_point = available_space;
-        while !text_body.is_char_boundary(cut_off_point) {
-            cut_off_point -= 1;
-        }
-
-        format!(
-            "{}{}{}",
-            &text_body[..cut_off_point],
-            text_end,
-            truncation_msg
-        )
-    } else {
-        format!("{}{}", text_body, text_end)
-    };
-
-    api::send_reply(args, &msg)
 }
 
 fn main_menu(args: &Args, commands: &IndexMap<&str, (&str, GuardFn)>) -> String {
