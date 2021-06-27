@@ -164,6 +164,9 @@ fn run_code(args: &Args, code: &str) -> Result<String, Error> {
         request.crate_type = CrateType::Library;
     }
 
+    let message = "*Running code on playground...*";
+    api::send_reply(&args, message)?;
+
     let resp = args
         .http
         .post("https://play.rust-lang.org/execute")
