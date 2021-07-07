@@ -65,7 +65,7 @@ impl Commands {
         info!("Adding command {}", &command);
         let mut state = 0;
 
-        let mut opt_lambda_state = None;
+        let mut reused_space_state = None;
         let mut opt_final_states = vec![];
 
         let handler = Arc::new(Command {
@@ -79,21 +79,31 @@ impl Commands {
             .enumerate()
             .for_each(|(i, segment)| {
                 if let Some(name) = key_value_pair(segment) {
-                    if let Some(lambda) = opt_lambda_state {
+                    if let Some(lambda) = reused_space_state {
                         state = self.add_key_value(name, lambda);
+                        self.state_machine.add_next_state(state, lambda);
+                        opt_final_states.push(state);
+
+                        state = self.add_quoted_key_value(name, lambda);
                         self.state_machine.add_next_state(state, lambda);
                         opt_final_states.push(state);
                     } else {
                         opt_final_states.push(state);
                         state = self.add_space(state, i);
-                        opt_lambda_state = Some(state);
+                        reused_space_state = Some(state);
+
                         state = self.add_key_value(name, state);
                         self.state_machine
-                            .add_next_state(state, opt_lambda_state.unwrap());
+                            .add_next_state(state, reused_space_state.unwrap());
+                        opt_final_states.push(state);
+
+                        state = self.add_quoted_key_value(name, reused_space_state.unwrap());
+                        self.state_machine
+                            .add_next_state(state, reused_space_state.unwrap());
                         opt_final_states.push(state);
                     }
                 } else {
-                    opt_lambda_state = None;
+                    reused_space_state = None;
                     opt_final_states.truncate(0);
                     let last_state = state;
                     state = self.add_space(state, i);
@@ -122,7 +132,7 @@ impl Commands {
                 }
             });
 
-        if opt_lambda_state.is_some() {
+        if reused_space_state.is_some() {
             opt_final_states.iter().for_each(|state| {
                 self.state_machine.set_final_state(*state);
                 self.state_machine.set_handler(*state, handler.clone());
@@ -322,11 +332,30 @@ impl Commands {
         state = self.state_machine.add(state, CharacterSet::from_char('='));
 
         let mut char_set = CharacterSet::any();
-        char_set.remove(&[' ', '\n']);
+        char_set.remove(&[' ', '\n', '"']);
         state = self.state_machine.add(state, char_set);
         self.state_machine.add_next_state(state, state);
         self.state_machine.start_parse(state, name);
         self.state_machine.end_parse(state);
+
+        state
+    }
+
+    fn add_quoted_key_value(&mut self, name: &'static str, mut state: usize) -> usize {
+        name.chars().for_each(|c| {
+            state = self.state_machine.add(state, CharacterSet::from_char(c));
+        });
+        state = self.state_machine.add(state, CharacterSet::from_char('='));
+        state = self.state_machine.add(state, CharacterSet::from_char('"'));
+
+        let mut char_set = CharacterSet::any();
+        char_set.remove(&['"']);
+        state = self.state_machine.add(state, char_set);
+        self.state_machine.add_next_state(state, state);
+        self.state_machine.start_parse(state, name);
+        self.state_machine.end_parse(state);
+
+        state = self.state_machine.add(state, CharacterSet::from_char('"'));
 
         state
     }
