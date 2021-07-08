@@ -374,3 +374,44 @@ fn key_value_pair(s: &'static str) -> Option<&'static str> {
         })
         .flatten()
 }
+
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_commands() {
+        fn auth_check(args: &Args) -> Result<bool, Error> {
+            Ok(true)
+        }
+
+        macro_rules! params {
+            ($(($key:literal, $value:literal)),+) => (
+                [$(($key, $value)),+].iter().fold(
+                        HashMap::new(),
+                        |mut hash_map, pair| {
+                            hash_map.insert(pair.0, pair.1);
+                            hash_map
+                        },
+                )
+            );
+        }
+
+        let mut cmds = Commands::new();
+
+        cmds.add_protected("?tags delete {key}", |_: Args| Ok(()), auth_check);
+
+        cmds.state_machine
+            .process("?tags delete foo")
+            .map(|matched| {
+                assert!(params!(("key", "foo")) == matched.params);
+            });
+
+        cmds.add_protected("?tags create {key} value...", |_: Args| Ok(()), auth_check);
+
+        cmds.state_machine
+            .process("?tags create foo foo bar baz")
+            .map(|matched| {
+                assert!(params!(("key", "foo"), ("value", "foo bar baz")) == matched.params);
+            });
+    }
+}
