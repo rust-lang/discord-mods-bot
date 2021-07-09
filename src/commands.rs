@@ -379,11 +379,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_commands() {
-        fn auth_check(args: &Args) -> Result<bool, Error> {
-            Ok(true)
-        }
-
+    fn existing_commands_are_parsed_as_expected() {
         macro_rules! params {
             ($(($key:literal, $value:literal)),+) => (
                 [$(($key, $value)),+].iter().fold(
@@ -398,20 +394,46 @@ mod test {
 
         let mut cmds = Commands::new();
 
-        cmds.add_protected("?tags delete {key}", |_: Args| Ok(()), auth_check);
+        cmds.add("?tags delete {key}", |_: Args| Ok(()));
+        cmds.add("?tags create {key} value...", |_: Args| Ok(()));
+        cmds.add("?tags update {key} value...", |_: Args| Ok(()));
+        cmds.add("?tag {key}", |_: Args| Ok(()));
+        cmds.add("?tags", |_: Args| Ok(()));
 
-        cmds.state_machine
-            .process("?tags delete foo")
-            .map(|matched| {
-                assert!(params!(("key", "foo")) == matched.params);
-            });
+        cmds.add("?crate query...", |_: Args| Ok(()));
 
-        cmds.add_protected("?tags create {key} value...", |_: Args| Ok(()), auth_check);
+        // tags
 
-        cmds.state_machine
-            .process("?tags create foo foo bar baz")
-            .map(|matched| {
-                assert!(params!(("key", "foo"), ("value", "foo bar baz")) == matched.params);
-            });
+        let tags_delete = cmds.state_machine.process("?tags delete foo");
+        assert!(tags_delete.is_some());
+        tags_delete.map(|matched| assert!(params!(("key", "foo")) == matched.params));
+
+        let tags_create = cmds.state_machine.process("?tags create foo foo bar baz");
+        assert!(tags_create.is_some());
+        tags_create.map(|matched| {
+            assert!(params!(("key", "foo"), ("value", "foo bar baz")) == matched.params);
+        });
+
+        let tags_update = cmds.state_machine.process("?tags update foo 123 456 abc");
+        assert!(tags_update.is_some());
+        tags_update.map(|matched| {
+            assert!(params!(("key", "foo"), ("value", "123 456 abc")) == matched.params);
+        });
+
+        let tag = cmds.state_machine.process("?tag foo");
+        assert!(tag.is_some());
+        tag.map(|matched| {
+            assert!(params!(("key", "foo")) == matched.params);
+        });
+
+        assert!(cmds.state_machine.process("?tags").is_some());
+
+        // crates
+
+        let krate = cmds.state_machine.process("?crate 12345abc");
+        assert!(krate.is_some());
+        krate.map(|matched| {
+            assert!(params!(("query", "12345abc")) == matched.params);
+        });
     }
 }
