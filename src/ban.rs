@@ -3,9 +3,12 @@ use crate::{
 };
 use diesel::prelude::*;
 use serenity::{model::prelude::*, prelude::*, utils::parse_username};
-use std::time::{Duration, SystemTime};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
-pub(crate) fn save_ban(user_id: String, guild_id: String, hours: u64) -> Result<(), Error> {
+pub fn save_ban(user_id: String, guild_id: String, hours: u64) -> Result<(), Error> {
     info!("Recording ban for user {}", &user_id);
     let conn = DB.get()?;
     diesel::insert_into(bans::table)
@@ -22,7 +25,7 @@ pub(crate) fn save_ban(user_id: String, guild_id: String, hours: u64) -> Result<
     Ok(())
 }
 
-pub(crate) fn save_unban(user_id: String, guild_id: String) -> Result<(), Error> {
+pub fn save_unban(user_id: String, guild_id: String) -> Result<(), Error> {
     info!("Recording unban for user {}", &user_id);
     let conn = DB.get()?;
     diesel::update(bans::table)
@@ -37,30 +40,34 @@ pub(crate) fn save_unban(user_id: String, guild_id: String) -> Result<(), Error>
     Ok(())
 }
 
-pub(crate) fn unban_users(cx: &Context) -> Result<(), SendSyncError> {
+pub async fn unban_users(cx: &Context) -> Result<(), SendSyncError> {
     use std::str::FromStr;
 
-    let conn = DB.get()?;
-    let to_unban = bans::table
-        .filter(
-            bans::unbanned
-                .eq(false)
-                .and(bans::end_time.le(SystemTime::now())),
-        )
-        .load::<(i32, String, String, bool, SystemTime, SystemTime)>(&conn)?;
+    let to_unban = tokio::task::spawn_blocking(move || -> Result<Vec<(i32, String, String, bool, SystemTime, SystemTime)>, SendSyncError> {
+        let conn = DB.get()?;
+        Ok(bans::table
+            .filter(
+                bans::unbanned
+                    .eq(false)
+                    .and(bans::end_time.le(SystemTime::now())),
+            )
+            .load::<(i32, String, String, bool, SystemTime, SystemTime)>(&conn)?)
+    })
+    .await?;
 
-    for row in &to_unban {
+    for row in &to_unban? {
         let guild_id = GuildId::from(u64::from_str(&row.2)?);
         info!("Unbanning user {}", &row.1);
-        guild_id.unban(&cx, u64::from_str(&row.1)?)?;
+        guild_id.unban(&cx, u64::from_str(&row.1)?).await?;
     }
+
     Ok(())
 }
 
 /// Temporarily ban an user from the guild.  
 ///
 /// Requires the ban members permission
-pub(crate) fn temp_ban(args: Args) -> Result<(), Error> {
+pub async fn temp_ban(args: Arc<Args>) -> Result<(), Error> {
     let user_id = parse_username(
         &args
             .params
@@ -82,25 +89,23 @@ pub(crate) fn temp_ban(args: Args) -> Result<(), Error> {
         .get("reason")
         .ok_or("unable to retrieve reason param")?;
 
-    if let Some(guild) = args.msg.guild(&args.cx) {
+    if let Some(guild) = args.msg.guild(&args.cx).await {
         info!("Banning user from guild");
         let user = UserId::from(user_id);
 
-        user.create_dm_channel(args.cx)?
-            .say(args.cx, ban_message(reason, hours))?;
+        user.create_dm_channel(&args.cx)
+            .await?
+            .say(&args.cx, ban_message(reason, hours))
+            .await?;
 
-        guild.read().ban(args.cx, &user, &"all")?;
+        guild.ban(&args.cx, &user, 7).await?;
 
-        save_ban(
-            format!("{}", user_id),
-            format!("{}", guild.read().id),
-            hours,
-        )?;
+        save_ban(format!("{}", user_id), format!("{}", guild.id), hours)?;
     }
     Ok(())
 }
 
-pub(crate) fn help(args: Args) -> Result<(), Error> {
+pub async fn help(args: Arc<Args>) -> Result<(), Error> {
     let hours = 24;
     let reason = "violating the code of conduct";
 
@@ -125,6 +130,6 @@ will ban a user for {hours} hours and send them the following message:
         reason = reason,
     );
 
-    api::send_reply(&args, &help_string)?;
+    api::send_reply(args.clone(), &help_string).await?;
     Ok(())
 }

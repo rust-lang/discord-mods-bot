@@ -4,13 +4,14 @@ use crate::{
     db::DB,
     schema::{messages, roles, users},
     text::WELCOME_BILLBOARD,
-    Error,
+    Error, SendSyncError,
 };
 use diesel::prelude::*;
 use serenity::{model::prelude::*, prelude::*};
+use std::sync::Arc;
 
 /// Write the welcome message to the welcome channel.  
-pub(crate) fn post_message(args: Args) -> Result<(), Error> {
+pub async fn post_message(args: Arc<Args>) -> Result<(), Error> {
     use std::str::FromStr;
 
     if api::is_mod(&args)? {
@@ -21,50 +22,54 @@ pub(crate) fn post_message(args: Args) -> Result<(), Error> {
 
         let channel_id = ChannelId::from_str(channel_name)?;
         info!("Posting welcome message");
-        let message = channel_id.say(&args.cx, WELCOME_BILLBOARD)?;
-        let bot_id = &message.author.id;
+        let message = channel_id.say(args.clone().cx, WELCOME_BILLBOARD).await?;
+        let message_id = message.id.0.to_string();
+        let bot_id = message.author.id.to_string();
 
-        let conn = DB.get()?;
+        tokio::task::spawn_blocking(move || -> Result<(), SendSyncError> {
+            let channel_id = channel_id.0.to_string();
 
-        let _ = conn
-            .build_transaction()
-            .read_write()
-            .run::<_, Box<dyn std::error::Error>, _>(|| {
-                let message_id = message.id.0.to_string();
-                let channel_id = channel_id.0.to_string();
+            let conn = DB.get()?;
 
-                diesel::insert_into(messages::table)
-                    .values((
-                        messages::name.eq("welcome"),
-                        messages::message.eq(&message_id),
-                        messages::channel.eq(&channel_id),
-                    ))
-                    .on_conflict(messages::name)
-                    .do_update()
-                    .set((
-                        messages::message.eq(&message_id),
-                        messages::channel.eq(&channel_id),
-                    ))
-                    .execute(&conn)?;
+            let _ = conn
+                .build_transaction()
+                .read_write()
+                .run::<_, SendSyncError, _>(|| {
+                    diesel::insert_into(messages::table)
+                        .values((
+                            messages::name.eq("welcome"),
+                            messages::message.eq(&message_id),
+                            messages::channel.eq(&channel_id),
+                        ))
+                        .on_conflict(messages::name)
+                        .do_update()
+                        .set((
+                            messages::message.eq(&message_id),
+                            messages::channel.eq(&channel_id),
+                        ))
+                        .execute(&conn)?;
 
-                let user_id = &bot_id.to_string();
+                    let user_id = bot_id;
 
-                diesel::insert_into(users::table)
-                    .values((users::user_id.eq(user_id), users::name.eq("me")))
-                    .on_conflict(users::name)
-                    .do_update()
-                    .set((users::name.eq("me"), users::user_id.eq(user_id)))
-                    .execute(&conn)?;
-                Ok(())
-            })?;
+                    diesel::insert_into(users::table)
+                        .values((users::user_id.eq(&user_id), users::name.eq("me")))
+                        .on_conflict(users::name)
+                        .do_update()
+                        .set((users::name.eq("me"), users::user_id.eq(&user_id)))
+                        .execute(&conn)?;
+                    Ok(())
+                })?;
+            Ok(())
+        })
+        .await?;
 
-        let white_check_mark = ReactionType::from("✅");
-        message.react(args.cx, white_check_mark)?;
+        let white_check_mark = ReactionType::from_str("✅")?;
+        message.react(args.cx, white_check_mark).await?;
     }
     Ok(())
 }
 
-pub(crate) fn assign_talk_role(cx: &Context, reaction: &Reaction) -> Result<(), Error> {
+pub fn assign_talk_role(cx: &Context, reaction: &Reaction) -> Result<(), Error> {
     let channel = reaction.channel(cx)?;
     let channel_id = ChannelId::from(&channel);
     let message = reaction.message(cx)?;
@@ -126,7 +131,7 @@ pub(crate) fn assign_talk_role(cx: &Context, reaction: &Reaction) -> Result<(), 
     Ok(())
 }
 
-pub(crate) fn help(args: Args) -> Result<(), Error> {
+pub async fn help(args: Arc<Args>) -> Result<(), Error> {
     let help_string = format!(
         "
 Post the welcome message to `channel`
@@ -143,6 +148,6 @@ will post the welcome message to the `channel` specified.
         command = "?CoC {channel}"
     );
 
-    api::send_reply(&args, &help_string)?;
+    api::send_reply(args.clone(), &help_string).await?;
     Ok(())
 }

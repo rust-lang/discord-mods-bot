@@ -4,14 +4,14 @@ use std::{collections::HashMap, u64};
 ///
 /// Stores the characters for a character set
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub(crate) struct CharacterSet {
+pub struct CharacterSet {
     low_mask: u64,
     high_mask: u64,
     any: bool,
 }
 
 impl CharacterSet {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             low_mask: 0,
             high_mask: 0,
@@ -19,7 +19,7 @@ impl CharacterSet {
         }
     }
 
-    pub(crate) fn any() -> Self {
+    pub fn any() -> Self {
         Self {
             low_mask: u64::MAX,
             high_mask: u64::MAX,
@@ -28,7 +28,7 @@ impl CharacterSet {
     }
 
     /// Add a character to the character set.   
-    pub(crate) fn insert(&mut self, ch: char) {
+    pub fn insert(&mut self, ch: char) {
         let val = ch as u32 - 1;
 
         match val {
@@ -45,7 +45,7 @@ impl CharacterSet {
     }
 
     /// Remove characters from the character set.   
-    pub(crate) fn remove(&mut self, chs: &[char]) {
+    pub fn remove(&mut self, chs: &[char]) {
         chs.iter().for_each(|ch| {
             let val = *ch as u32 - 1;
 
@@ -64,7 +64,7 @@ impl CharacterSet {
     }
 
     /// Check if the character `ch` is a member of the character set.  
-    pub(crate) fn contains(&self, ch: char) -> bool {
+    pub fn contains(&self, ch: char) -> bool {
         let val = ch as u32 - 1;
 
         match val {
@@ -82,49 +82,47 @@ impl CharacterSet {
     }
 
     /// Insert the character `ch` into the character set.  
-    pub(crate) fn from_char(ch: char) -> Self {
+    pub fn from_char(ch: char) -> Self {
         let mut chars = Self::new();
         chars.insert(ch);
         chars
     }
 
     /// Insert the characters `chs` into the character set.  
-    pub(crate) fn from_chars(chs: &[char]) -> Self {
+    pub fn from_chars(chs: &[char]) -> Self {
         let mut chars = Self::new();
         chs.iter().for_each(|ch| chars.insert(*ch));
         chars
     }
 }
 
-pub(crate) struct State<T> {
+pub struct State {
     index: usize,
     expected: CharacterSet,
     next_states: Vec<usize>,
     is_final_state: bool,
-    handler: Option<T>,
 }
 
-impl<T> PartialEq for State<T> {
-    fn eq(&self, other: &State<T>) -> bool {
+impl PartialEq for State {
+    fn eq(&self, other: &State) -> bool {
         self.index == other.index
     }
 }
 
-impl<T> State<T> {
-    pub(crate) fn new(index: usize, expected: CharacterSet) -> Self {
+impl State {
+    pub fn new(index: usize, expected: CharacterSet) -> Self {
         Self {
             index,
             expected,
             next_states: Vec::new(),
             is_final_state: false,
-            handler: None,
         }
     }
 }
 
 /// # Traversal
 #[derive(Debug, Clone)]
-pub(crate) struct Traversal {
+pub struct Traversal {
     current_state: usize,
     positions: Vec<(usize, usize, Option<&'static str>)>,
     segment_start: Option<usize>,
@@ -133,7 +131,7 @@ pub(crate) struct Traversal {
 
 impl Traversal {
     /// Create a new traversal.  
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             current_state: 0,
             positions: Vec::new(),
@@ -143,42 +141,42 @@ impl Traversal {
     }
 
     /// Mark the position in the input where a dynamic segment begins.  
-    pub(crate) fn set_segment_start(&mut self, pos: usize, name: &'static str) {
+    pub fn set_segment_start(&mut self, pos: usize, name: &'static str) {
         self.segment_start = Some(pos);
         self.segment_name = Some(name);
     }
 
     /// Mark the position in the input where a dynamic segment ends.   
-    pub(crate) fn set_segment_end(&mut self, pos: usize) {
+    pub fn set_segment_end(&mut self, pos: usize) {
         self.positions
             .push((self.segment_start.unwrap(), pos, self.segment_name.take()));
         self.segment_start = None;
     }
 
     /// Returns a `HashMap` containing the dynamic segments parsed from the input.  
-    pub(crate) fn extract<'a>(&self, input: &'a str) -> HashMap<&'static str, &'a str> {
+    pub fn extract<'a>(&self, input: &'a str) -> HashMap<&'static str, String> {
         self.positions
             .iter()
             .fold(HashMap::new(), |mut hash_map, (start, end, name)| {
-                hash_map.insert(name.unwrap(), &input[*start..*end]);
+                hash_map.insert(name.unwrap(), input[*start..*end].to_string());
                 hash_map
             })
     }
 }
 
-pub(crate) struct Match<'m, T> {
-    pub handler: &'m T,
-    pub params: HashMap<&'static str, &'m str>,
+pub struct Match {
+    pub state: usize,
+    pub params: HashMap<&'static str, String>,
 }
 
-pub(crate) struct StateMachine<T> {
-    states: Vec<State<T>>,
+pub struct StateMachine {
+    states: Vec<State>,
     start_parse: Vec<Option<&'static str>>,
     end_parse: Vec<bool>,
 }
 
-impl<T> StateMachine<T> {
-    pub(crate) fn new() -> Self {
+impl StateMachine {
+    pub fn new() -> Self {
         Self {
             states: vec![State::new(0, CharacterSet::new())],
             start_parse: vec![None],
@@ -187,7 +185,7 @@ impl<T> StateMachine<T> {
     }
 
     /// Add a state to the state machine.  
-    pub(crate) fn add(&mut self, index: usize, expected: CharacterSet) -> usize {
+    pub fn add(&mut self, index: usize, expected: CharacterSet) -> usize {
         for &next_index in &self.states[index].next_states {
             let state = &self.states[next_index];
             if state.expected == expected {
@@ -201,7 +199,7 @@ impl<T> StateMachine<T> {
     }
 
     /// Add a next state to the next_states of an existing state in the state machine.  
-    pub(crate) fn add_next_state(&mut self, index: usize, next_index: usize) {
+    pub fn add_next_state(&mut self, index: usize, next_index: usize) {
         let next_states = &mut self.states[index].next_states;
 
         if !next_states.contains(&next_index) {
@@ -220,30 +218,24 @@ impl<T> StateMachine<T> {
     }
 
     /// Set the `is_final_state` flag on a state to true.  
-    pub(crate) fn set_final_state(&mut self, index: usize) {
+    pub fn set_final_state(&mut self, index: usize) {
         self.states[index].is_final_state = true;
-    }
-
-    /// Set the handler function for a state.  
-    pub(crate) fn set_handler(&mut self, index: usize, handler: T) {
-        let state = &mut self.states[index];
-        state.handler = Some(handler);
     }
 
     /// Mark that the index in the state machine is a state to start parsing a dynamic
     /// segment.  
-    pub(crate) fn start_parse(&mut self, index: usize, name: &'static str) {
+    pub fn start_parse(&mut self, index: usize, name: &'static str) {
         self.start_parse[index] = Some(name);
     }
 
     /// Mark that the index in the state machine is a state to stop parsing a dynamic
     /// segment.  
-    pub(crate) fn end_parse(&mut self, index: usize) {
+    pub fn end_parse(&mut self, index: usize) {
         self.end_parse[index] = true;
     }
 
     /// Run the input through the state machine, optionally returning a handler and params.  
-    pub(crate) fn process<'m>(&'m self, input: &'m str) -> Option<Match<'m, T>> {
+    pub fn process<'m>(&'m self, input: &'m str) -> Option<Match> {
         let mut traversals = vec![Traversal::new()];
 
         for (i, ch) in input.char_indices() {
@@ -274,7 +266,7 @@ impl<T> StateMachine<T> {
 
             Some({
                 Match {
-                    handler: state.handler.as_ref().unwrap(),
+                    state: traversal.current_state,
                     params: traversal.extract(input),
                 }
             })

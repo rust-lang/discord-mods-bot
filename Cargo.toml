@@ -8,10 +8,11 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = { version = "0.8.7", features = ["model"] }
+serenity = { version = "0.10.8", features = ["model"] }
+reqwest = { version = "0.10", features = ["json"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 diesel = { version = "1.4.0", features = ["postgres", "r2d2"] }
 diesel_migrations = { version = "1.4.0", features = ["postgres"] }
-reqwest = { version = "0.10", features = ["blocking", "json"] }
 serde = "1.0"
 serde_derive = "1.0"
 lazy_static = "1.4.0"

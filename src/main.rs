@@ -8,30 +8,33 @@ extern crate diesel_migrations;
 extern crate log;
 
 mod api;
-mod ban;
+//mod ban;
 mod command_history;
 mod commands;
 mod crates;
 mod db;
-mod jobs;
+//mod jobs;
 mod playground;
 mod schema;
 mod state_machine;
 mod tags;
 mod text;
-mod welcome;
+//mod welcome;
 
-use crate::db::DB;
-use commands::{Args, Commands, GuardFn};
+pub type Error = Box<dyn std::error::Error>;
+pub type SendSyncError = Box<dyn std::error::Error + Send + Sync>;
+
+pub const HOUR: u64 = 3600;
+
+use crate::{
+    commands::{Command, Commands},
+    db::DB,
+};
 use diesel::prelude::*;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serenity::{model::prelude::*, prelude::*};
-
-pub(crate) type Error = Box<dyn std::error::Error>;
-pub(crate) type SendSyncError = Box<dyn std::error::Error + Send + Sync>;
-
-pub(crate) const HOUR: u64 = 3600;
+use serenity::{async_trait, model::prelude::*, prelude::*};
+use std::collections::HashMap;
 
 #[derive(Deserialize)]
 struct Config {
@@ -82,8 +85,8 @@ fn init_data(config: &Config) -> Result<(), Error> {
     Ok(())
 }
 
-fn app() -> Result<(), Error> {
-    let config = envy::from_env::<Config>()?;
+async fn app() -> Result<(), Error> {
+    let config = envy::from_env::<Config>().unwrap();
 
     info!("starting...");
 
@@ -95,194 +98,208 @@ fn app() -> Result<(), Error> {
 
     if config.tags {
         // Tags
-        cmds.add_protected("?tags delete {key}", tags::delete, api::is_wg_and_teams);
-        cmds.add_protected(
+        cmds.add(
+            "?tags delete {key}",
+            Command::new_with_auth(tags::delete, api::is_wg_and_teams),
+        );
+        cmds.add(
             "?tags create {key} value...",
-            tags::post,
-            api::is_wg_and_teams,
+            Command::new_with_auth(tags::post, api::is_wg_and_teams),
         );
-        cmds.add_protected(
+        cmds.add(
             "?tags update {key} value...",
-            tags::update,
-            api::is_wg_and_teams,
+            Command::new_with_auth(tags::update, api::is_wg_and_teams),
         );
-        cmds.add("?tag {key}", tags::get);
-        cmds.add("?tags", tags::get_all);
-        cmds.help("?tags", "A key value store", tags::help);
+        cmds.add("?tag {key}", Command::new(tags::get));
+        cmds.add("?tags", Command::new(tags::get_all));
+        cmds.help("?tags", "A key value store", Command::new(tags::help));
     }
 
     if config.crates {
         // crates.io
-        cmds.add("?crate query...", crates::search);
-        cmds.help("?crate", "Lookup crates on crates.io", crates::help);
+        cmds.add("?crate query...", Command::new(crates::search));
+        cmds.help(
+            "?crate",
+            "Lookup crates on crates.io",
+            Command::new(crates::help),
+        );
 
         // docs.rs
-        cmds.add("?docs query...", crates::doc_search);
-        cmds.help("?docs", "Lookup documentation", crates::doc_help);
+        cmds.add("?docs query...", Command::new(crates::doc_search));
+        cmds.help(
+            "?docs",
+            "Lookup documentation",
+            Command::new(crates::doc_help),
+        );
     }
 
     if config.eval {
         // rust playground
         cmds.add(
             "?play mode={} edition={} channel={} warn={} ```\ncode``` ...",
-            playground::run,
+            Command::new(playground::run),
         );
-        cmds.add("?play code...", playground::err);
-        cmds.help(
-            "?play",
-            "Compile and run rust code in a playground",
-            |args| playground::help(args, "play"),
-        );
+        cmds.add("?play code...", Command::new(playground::err));
+        //        cmds.help(
+        //            "?play",
+        //            "Compile and run rust code in a playground",
+        //            Command::new(|args| async playground::help(args, "play").await),
+        //        );
 
         cmds.add(
             "?eval mode={} edition={} channel={} warn={} ```\ncode``` ...",
-            playground::eval,
+            Command::new(playground::eval),
         );
         cmds.add(
             "?eval mode={} edition={} channel={} warn={} ```code``` ...",
-            playground::eval,
+            Command::new(playground::eval),
         );
         cmds.add(
             "?eval mode={} edition={} channel={} warn={} `code` ...",
-            playground::eval,
+            Command::new(playground::eval),
         );
-        cmds.add("?eval code...", playground::eval_err);
-        cmds.help("?eval", "Evaluate a single rust expression", |args| {
-            playground::help(args, "eval")
-        });
+        cmds.add("?eval code...", Command::new(playground::eval_err));
+        //        cmds.help("?eval", "Evaluate a single rust expression", Command::new(|args| async {
+        //            playground::help(args, "eval").await
+        //        }));
     }
 
-    // Slow mode.
-    // 0 seconds disables slowmode
-    cmds.add_protected("?slowmode {channel} {seconds}", api::slow_mode, api::is_mod);
-    cmds.help_protected(
-        "?slowmode",
-        "Set slowmode on a channel",
-        api::slow_mode_help,
-        api::is_mod,
-    );
-
-    // Kick
-    cmds.add_protected("?kick {user}", api::kick, api::is_mod);
-    cmds.help_protected(
-        "?kick",
-        "Kick a user from the guild",
-        api::kick_help,
-        api::is_mod,
-    );
-
-    // Ban
-    cmds.add_protected("?ban {user} {hours} reason...", ban::temp_ban, api::is_mod);
-    cmds.help_protected(
-        "?ban",
-        "Temporarily ban a user from the guild",
-        ban::help,
-        api::is_mod,
-    );
+    //    // Slow mode.
+    //    // 0 seconds disables slowmode
+    //    cmds.add_protected("?slowmode {channel} {seconds}", api::slow_mode, api::is_mod);
+    //    cmds.help_protected(
+    //        "?slowmode",
+    //        "Set slowmode on a channel",
+    //        api::slow_mode_help,
+    //        api::is_mod,
+    //    );
+    //
+    //    // Kick
+    //    cmds.add_protected("?kick {user}", api::kick, api::is_mod);
+    //    cmds.help_protected(
+    //        "?kick",
+    //        "Kick a user from the guild",
+    //        api::kick_help,
+    //        api::is_mod,
+    //    );
+    //
+    //    // Ban
+    //    cmds.add_protected("?ban {user} {hours} reason...", ban::temp_ban, api::is_mod);
+    //    cmds.help_protected(
+    //        "?ban",
+    //        "Temporarily ban a user from the guild",
+    //        ban::help,
+    //        api::is_mod,
+    //    );
 
     // Post the welcome message to the welcome channel.
-    cmds.add_protected("?CoC {channel}", welcome::post_message, api::is_mod);
-    cmds.help_protected(
-        "?CoC",
-        "Post the code of conduct message to a channel",
-        welcome::help,
-        api::is_mod,
-    );
+    //cmds.add_protected("?CoC {channel}", welcome::post_message, api::is_mod);
+    //cmds.help_protected(
+    //    "?CoC",
+    //    "Post the code of conduct message to a channel",
+    //    welcome::help,
+    //    api::is_mod,
+    //);
 
-    let menu = cmds.menu();
-    cmds.add("?help", move |args: Args| {
-        let output = main_menu(&args, menu.as_ref().unwrap());
-        api::send_reply(&args, &format!("```{}```", &output))?;
-        Ok(())
-    });
+    //    let menu = cmds.menu();
+    //    cmds.add("?help", move |args: Arc<Args>| async {
+    //        let output = main_menu(&args, menu.as_ref().unwrap());
+    //        api::send_reply(args.clone(), &format!("```{}```", &output)).await?;
+    //        Ok(())
+    //    });
 
-    let mut client = Client::new_with_extras(&config.discord_token, |e| {
-        e.event_handler(Events { cmds });
-        e
-    })?;
+    let mut client = Client::builder(&config.discord_token)
+        .event_handler(Events {})
+        .await?;
 
-    client.start()?;
+    client.start().await?;
 
     Ok(())
 }
 
-fn main_menu(args: &Args, commands: &IndexMap<&str, (&str, GuardFn)>) -> String {
-    let mut menu = format!("Commands:\n");
+//fn main_menu(args: Arc<Args>, commands: &IndexMap<&str, (&str, GuardFn)>) -> String {
+//    let mut menu = format!("Commands:\n");
+//
+//    menu = commands
+//        .iter()
+//        .fold(menu, |mut menu, (base_cmd, (description, guard))| {
+//            if let Ok(true) = (guard)(args.clone()) {
+//                menu += &format!("\t{cmd:<12}{desc}\n", cmd = base_cmd, desc = description);
+//            }
+//            menu
+//        });
+//
+//    menu += &format!("\t{help:<12}This menu\n", help = "?help");
+//    menu += "\nType ?help command for more info on a command.";
+//    menu += "\n\nAdditional Info:\n";
+//    menu += "\tYou can edit your message to the bot and the bot will edit its response.";
+//    menu
+//}
 
-    menu = commands
-        .iter()
-        .fold(menu, |mut menu, (base_cmd, (description, guard))| {
-            if let Ok(true) = (guard)(&args) {
-                menu += &format!("\t{cmd:<12}{desc}\n", cmd = base_cmd, desc = description);
-            }
-            menu
-        });
-
-    menu += &format!("\t{help:<12}This menu\n", help = "?help");
-    menu += "\nType ?help command for more info on a command.";
-    menu += "\n\nAdditional Info:\n";
-    menu += "\tYou can edit your message to the bot and the bot will edit its response.";
-    menu
-}
-
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
 
-    if let Err(e) = app() {
+    if let Err(e) = app().await {
         error!("{}", e);
         std::process::exit(1);
     }
 }
 
-struct Events {
-    cmds: Commands,
-}
+struct Events {}
 
+#[async_trait]
 impl EventHandler for Events {
-    fn ready(&self, cx: Context, ready: Ready) {
+    async fn ready(&self, cx: Context, ready: Ready) {
         info!("{} connected to discord", ready.user.name);
-        {
-            let mut data = cx.data.write();
-            data.insert::<command_history::CommandHistory>(IndexMap::new());
-        }
-
-        jobs::start_jobs(cx);
+        //        {
+        //            let mut data = cx.data.write().await;
+        //            data.insert::<command_history::CommandHistory>(IndexMap::new());
+        //        }
+        //
+        //        jobs::start_jobs(cx);
     }
 
-    fn message(&self, cx: Context, message: Message) {
-        self.cmds.execute(cx, &message);
+    async fn message(&self, cx: Context, message: Message) {
+        //        self.cmds.execute(cx, &message);
     }
 
-    fn message_update(
+    async fn message_update(
         &self,
         cx: Context,
         _: Option<Message>,
         _: Option<Message>,
         ev: MessageUpdateEvent,
     ) {
-        if let Err(e) = command_history::replay_message(cx, ev, &self.cmds) {
-            error!("{}", e);
-        }
+        //        if let Err(e) = command_history::replay_message(cx, ev, &self.cmds) {
+        //            error!("{}", e);
+        //        }
     }
 
-    fn message_delete(&self, cx: Context, channel_id: ChannelId, message_id: MessageId) {
-        let mut data = cx.data.write();
-        let history = data.get_mut::<command_history::CommandHistory>().unwrap();
-        if let Some(response_id) = history.remove(&message_id) {
-            info!("deleting message: {:?}", response_id);
-            let _ = channel_id.delete_message(&cx, response_id);
-        }
+    async fn message_delete(
+        &self,
+        cx: Context,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        _guild_id: Option<GuildId>,
+    ) {
+        //        let mut data = cx.data.write().await;
+        //        let history = data.get_mut::<command_history::CommandHistory>().unwrap();
+        //        if let Some(response_id) = history.remove(&message_id) {
+        //            info!("deleting message: {:?}", response_id);
+        //            let _ = channel_id.delete_message(&cx, response_id);
+        //        }
     }
 
-    fn reaction_add(&self, cx: Context, reaction: Reaction) {
-        if let Err(e) = welcome::assign_talk_role(&cx, &reaction) {
-            error!("{}", e);
-        }
+    async fn reaction_add(&self, cx: Context, reaction: Reaction) {
+        //        if let Err(e) = welcome::assign_talk_role(&cx, &reaction) {
+        //            error!("{}", e);
+        //        }
     }
 
-    fn guild_ban_removal(&self, _cx: Context, guild_id: GuildId, user: User) {
-        if let Err(e) = ban::save_unban(format!("{}", user.id), format!("{}", guild_id)) {
-            error!("{}", e);
-        }
+    async fn guild_ban_removal(&self, _cx: Context, guild_id: GuildId, user: User) {
+        //        if let Err(e) = ban::save_unban(format!("{}", user.id), format!("{}", guild_id)) {
+        //            error!("{}", e);
+        //        }
     }
 }

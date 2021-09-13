@@ -2,8 +2,10 @@ use crate::{api, commands::Args, db::DB, schema::tags, Error};
 
 use diesel::prelude::*;
 
+use std::sync::Arc;
+
 /// Remove a key value pair from the tags.  
-pub fn delete(args: Args) -> Result<(), Error> {
+pub async fn delete(args: Arc<Args>) -> Result<(), Error> {
     let conn = DB.get()?;
     let key = args
         .params
@@ -11,14 +13,22 @@ pub fn delete(args: Args) -> Result<(), Error> {
         .ok_or("Unable to retrieve param: key")?;
 
     match diesel::delete(tags::table.filter(tags::key.eq(key))).execute(&conn) {
-        Ok(_) => args.msg.react(args.cx, "✅")?,
-        Err(_) => api::send_reply(&args, "A database error occurred when deleting the tag.")?,
+        Ok(_) => {
+            args.msg.react(&args.cx, '✅').await?;
+        }
+        Err(_) => {
+            api::send_reply(
+                args.clone(),
+                "A database error occurred when deleting the tag.",
+            )
+            .await?
+        }
     }
     Ok(())
 }
 
 /// Add a key value pair to the tags.  
-pub fn post(args: Args) -> Result<(), Error> {
+pub async fn post(args: Arc<Args>) -> Result<(), Error> {
     let conn = DB.get()?;
 
     let key = args
@@ -35,14 +45,22 @@ pub fn post(args: Args) -> Result<(), Error> {
         .values((tags::key.eq(key), tags::value.eq(value)))
         .execute(&conn)
     {
-        Ok(_) => args.msg.react(args.cx, "✅")?,
-        Err(_) => api::send_reply(&args, "A database error occurred when creating the tag.")?,
+        Ok(_) => {
+            args.msg.react(&args.cx, '✅').await?;
+        }
+        Err(_) => {
+            api::send_reply(
+                args.clone(),
+                "A database error occurred when creating the tag.",
+            )
+            .await?
+        }
     }
     Ok(())
 }
 
 /// Update an existing tag.
-pub fn update(args: Args) -> Result<(), Error> {
+pub async fn update(args: Arc<Args>) -> Result<(), Error> {
     let conn = DB.get()?;
 
     let key = args
@@ -59,15 +77,23 @@ pub fn update(args: Args) -> Result<(), Error> {
         .set(tags::value.eq(value))
         .execute(&conn)
     {
-        Ok(_) => args.msg.react(args.cx, "✅")?,
-        Err(_) => api::send_reply(&args, "A database error occurred when updating the tag.")?,
+        Ok(_) => {
+            args.msg.react(&args.cx, '✅').await?;
+        }
+        Err(_) => {
+            api::send_reply(
+                args.clone(),
+                "A database error occurred when updating the tag.",
+            )
+            .await?
+        }
     }
 
     Ok(())
 }
 
 /// Retrieve a value by key from the tags.  
-pub fn get(args: Args) -> Result<(), Error> {
+pub async fn get(args: Arc<Args>) -> Result<(), Error> {
     let conn = DB.get()?;
 
     let key = args.params.get("key").ok_or("unable to read params")?;
@@ -77,22 +103,22 @@ pub fn get(args: Args) -> Result<(), Error> {
         .load::<(i32, String, String)>(&conn)?;
 
     if results.is_empty() {
-        api::send_reply(&args, &format!("Tag not found for `{}`", key))?;
+        api::send_reply(args.clone(), &format!("Tag not found for `{}`", key)).await?;
     } else {
-        api::send_reply(&args, &results[0].2)?;
+        api::send_reply(args.clone(), &results[0].2).await?;
     }
 
     Ok(())
 }
 
 /// Retrieve all tags
-pub fn get_all(args: Args) -> Result<(), Error> {
+pub async fn get_all(args: Arc<Args>) -> Result<(), Error> {
     let conn = DB.get()?;
 
     let results = tags::table.load::<(i32, String, String)>(&conn)?;
 
     if results.is_empty() {
-        api::send_reply(&args, "No tags found")?;
+        api::send_reply(args.clone(), "No tags found").await?;
     } else {
         let tags = &results.iter().fold(String::new(), |prev, row| {
             if prev.len() < 1980 {
@@ -102,14 +128,14 @@ pub fn get_all(args: Args) -> Result<(), Error> {
             }
         });
 
-        api::send_reply(&args, &format!("All tags: ```\n{}```", &tags))?;
+        api::send_reply(args.clone(), &format!("All tags: ```\n{}```", &tags)).await?;
     }
 
     Ok(())
 }
 
 /// Print the help message
-pub fn help(args: Args) -> Result<(), Error> {
+pub async fn help(args: Arc<Args>) -> Result<(), Error> {
     let help_string = "```
 ?tags create {key} value...     Create a tag.  Limited to WG & Teams.
 ?tags update {key} value...     Update a tag.  Limited to WG & Teams.
@@ -118,6 +144,6 @@ pub fn help(args: Args) -> Result<(), Error> {
 ?tags                           Get all the tags.
 ?tag {key}                      Get a specific tag.
 ```";
-    api::send_reply(&args, &help_string)?;
+    api::send_reply(args.clone(), &help_string).await?;
     Ok(())
 }
