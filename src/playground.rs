@@ -237,7 +237,7 @@ pub fn help(args: Args, name: &str) -> Result<(), Error> {
 Optional arguments:
     \tmode: debug, release (default: debug)
     \tchannel: stable, beta, nightly (default: nightly)
-    \tedition: 2015, 2018, 2021 (default: 2018)
+    \tedition: 2015, 2018, 2021 (default: 2021)
     \twarn: boolean flag to enable compilation warnings
     ",
         name
