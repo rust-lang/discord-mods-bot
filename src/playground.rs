@@ -141,7 +141,7 @@ fn run_code(args: &Args, code: &str) -> Result<String, Error> {
     let warnings = args.params.get("warn").unwrap_or(&"false");
     let channel = args.params.get("channel").unwrap_or(&"nightly");
     let mode = args.params.get("mode").unwrap_or(&"debug");
-    let edition = args.params.get("edition").unwrap_or(&"2018");
+    let edition = args.params.get("edition").unwrap_or(&"2021");
 
     let mut request = PlaygroundCode::new(code);
 
@@ -237,7 +237,7 @@ pub fn help(args: Args, name: &str) -> Result<(), Error> {
 Optional arguments:
     \tmode: debug, release (default: debug)
     \tchannel: stable, beta, nightly (default: nightly)
-    \tedition: 2015, 2018, 2021 (default: 2018)
+    \tedition: 2015, 2018, 2021 (default: 2021)
     \twarn: boolean flag to enable compilation warnings
     ",
         name
