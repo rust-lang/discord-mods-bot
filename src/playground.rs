@@ -140,7 +140,11 @@ async fn run_code(args: Arc<Args>, code: String) -> Result<String, Error> {
     let mut errors = String::new();
 
     let warnings = args.params.get("warn").map(|s| &s[..]).unwrap_or("false");
-    let channel = args.params.get("channel").map(|s| &s[..]).unwrap_or("nightly");
+    let channel = args
+        .params
+        .get("channel")
+        .map(|s| &s[..])
+        .unwrap_or("nightly");
     let mode = args.params.get("mode").map(|s| &s[..]).unwrap_or("debug");
     let edition = args.params.get("edition").map(|s| &s[..]).unwrap_or("2021");
 
