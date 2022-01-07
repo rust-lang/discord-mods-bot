@@ -1,10 +1,13 @@
 use crate::{
     commands::{Commands, PREFIX},
-    Error, SendSyncError, HOUR,
+    Error, HOUR,
 };
 use indexmap::IndexMap;
+use reqwest::Client as HttpClient;
 use serenity::{model::prelude::*, prelude::*, utils::CustomMessage};
-use std::time::Duration;
+use sqlx::postgres::PgPool;
+use std::{sync::Arc, time::Duration};
+use tracing::info;
 
 const MESSAGE_AGE_MAX: Duration = Duration::from_secs(HOUR);
 
@@ -18,6 +21,8 @@ pub async fn replay_message(
     cx: Context,
     ev: MessageUpdateEvent,
     cmds: &Commands,
+    http: Arc<HttpClient>,
+    db: Arc<PgPool>,
 ) -> Result<(), Error> {
     let age = ev.timestamp.and_then(|create| {
         ev.edited_timestamp
@@ -37,14 +42,14 @@ pub async fn replay_message(
                 "sending edited message - {:?} {:?}",
                 msg.content, msg.author
             );
-            cmds.execute(cx, msg);
+            cmds.execute(cx, msg, http, db).await;
         }
     }
 
     Ok(())
 }
 
-pub async fn clear_command_history(cx: &Context) -> Result<(), SendSyncError> {
+pub async fn clear_command_history(cx: &Context) -> Result<(), Error> {
     let mut data = cx.data.write().await;
     let history = data.get_mut::<CommandHistory>().unwrap();
 

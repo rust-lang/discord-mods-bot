@@ -1,8 +1,8 @@
 use crate::{api, commands::Args, Error};
-
 use reqwest::header;
 use serde::Deserialize;
 use std::sync::Arc;
+use tracing::info;
 
 const USER_AGENT: &str = "rust-lang/discord-mods-bot";
 

@@ -1,105 +1,44 @@
 use crate::{
-    //api,
+    api,
+    command::{Auth, Command, CommandKind, Handler},
     state_machine::{CharacterSet, StateMachine},
-    Error,
 };
 use indexmap::IndexMap;
 use reqwest::Client as HttpClient;
 use serenity::{model::channel::Message, prelude::Context};
-use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
+use sqlx::postgres::PgPool;
+use std::{collections::HashMap, sync::Arc};
+use tracing::{error, info};
 
 pub const PREFIX: &str = "?";
 
-type ResultFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>>>>;
-
-pub trait Auth: 'static {
-    fn call(&self, args: Arc<Args>) -> ResultFuture<bool, Error>;
-}
-
-impl<F, G> Auth for F
-where
-    F: Fn(Arc<Args>) -> G + 'static,
-    G: Future<Output = Result<bool, Error>> + 'static,
-{
-    fn call(&self, args: Arc<Args>) -> ResultFuture<bool, Error> {
-        let fut = (self)(args);
-        Box::pin(async move { fut.await })
-    }
-}
-
-pub trait CommandEndpoint: 'static {
-    fn call(&self, args: Arc<Args>) -> ResultFuture<(), Error>;
-}
-
-impl<F, G> CommandEndpoint for F
-where
-    F: Fn(Arc<Args>) -> G + 'static,
-    G: Future<Output = Result<(), Error>> + 'static,
-{
-    fn call(&self, args: Arc<Args>) -> ResultFuture<(), Error> {
-        let fut = (self)(args);
-        Box::pin(async move { fut.await })
-    }
-}
-
-pub struct Command {
-    auth: Box<dyn Auth>,
-    inner: Box<dyn CommandEndpoint>,
-}
-
-impl Command {
-    pub fn new(inner: impl CommandEndpoint) -> Self {
-        Self {
-            auth: Box::new(|_| async { Ok(true) }),
-            inner: Box::new(inner),
-        }
-    }
-
-    pub fn new_with_auth(inner: impl CommandEndpoint, auth: impl Auth) -> Self {
-        Self {
-            auth: Box::new(auth),
-            inner: Box::new(inner),
-        }
-    }
-
-    async fn call(&self, args: Arc<Args>) -> Result<(), Error> {
-        info!("Checking permissions");
-        match self.auth.call(args.clone()).await {
-            Ok(true) => {
-                info!("Executing command");
-                self.inner.call(args.clone()).await?;
-            }
-            Ok(false) => {
-                info!("Not executing command, unauthorized");
-            }
-            Err(e) => (),
-        };
-
-        Ok(())
-    }
-}
-
-type CommandMap = HashMap<usize, Arc<Command>>;
-
 pub struct Args {
-    pub http: Arc<HttpClient>,
     pub cx: Context,
     pub msg: Message,
     pub params: HashMap<&'static str, String>,
+    pub http: Arc<HttpClient>,
+    pub db: Arc<PgPool>,
+}
+
+async fn execute_command(args: Arc<Args>, handler: &'static Handler) {
+    info!("Executing command");
+    if let Err(e) = handler.call(args).await {
+        error!("{}", e);
+    }
 }
 
 pub struct Commands {
-    http_client: Arc<HttpClient>,
     state_machine: StateMachine,
-    command_map: CommandMap,
+    command_map: HashMap<usize, Arc<Command>>,
+    menu: Option<IndexMap<&'static str, (&'static str, &'static Auth)>>,
 }
 
 impl Commands {
     pub fn new() -> Self {
         Self {
-            http_client: Arc::new(HttpClient::new()),
             state_machine: StateMachine::new(),
-            command_map: CommandMap::new(),
+            command_map: HashMap::new(),
+            menu: Some(IndexMap::new()),
         }
     }
 
@@ -187,56 +126,62 @@ impl Commands {
         info!("Adding command ?help {}", &base_cmd);
         let mut state = 0;
 
-        //        self.menu.as_mut().map(|menu| {
-        //            menu.insert(cmd, (desc, guard));
-        //            menu
-        //        });
+        self.menu.as_mut().map(|menu| {
+            menu.insert(cmd, (desc, command.auth));
+            menu
+        });
 
         state = self.add_help_menu(base_cmd, state);
         self.state_machine.set_final_state(state);
         self.command_map.insert(state, Arc::new(command));
     }
 
-    //pub fn menu(&mut self) -> Option<IndexMap<&'static str, (&'static str, GuardFn)>> {
-    //    self.menu.take()
-    //}
-
-    pub async fn execute(&self, cx: Context, msg: Message) {
+    pub async fn execute(&self, cx: Context, msg: Message, http: Arc<HttpClient>, db: Arc<PgPool>) {
         let message = &msg.content;
         if !msg.is_own(&cx).await && message.starts_with(PREFIX) {
             if let Some(matched) = self.state_machine.process(message) {
                 info!("Processing command: {}", message);
                 let args = Arc::new(Args {
-                    http: self.http_client.clone(),
-                    cx: cx,
-                    msg: msg,
+                    cx,
+                    msg,
                     params: matched.params,
+                    http: http.clone(),
+                    db: db.clone(),
                 });
 
-                self.command_map
-                    .get(&matched.state)
-                    .unwrap()
-                    .call(args.clone())
-                    .await;
+                let command = self.command_map.get(&matched.state).unwrap();
 
-                //                 match matched.handler.authorize(args.clone()) {
-                //                     Ok(true) => {
-                //                         info!("Executing command");
-                //                         if let Err(e) = matched.handler.call(args).await {
-                //                             error!("{}", e);
-                //                         }
-                //                     }
-                //                     Ok(false) => {
-                //                         info!("Not executing command, unauthorized");
-                //                         if let Err(e) = api::send_reply(
-                //                             args.clone(),
-                //                             "You do not have permission to run this command",
-                //                         ) {
-                //                             error!("{}", e);
-                //                         }
-                //                     }
-                //                     Err(e) => error!("{}", e),
-                //                 }
+                match command.kind {
+                    CommandKind::Base => {
+                        execute_command(args.clone(), command.handler).await;
+                    }
+                    CommandKind::Protected => match command.auth.call(args.clone()).await {
+                        Ok(true) => {
+                            execute_command(args.clone(), command.handler).await;
+                        }
+                        Ok(false) => {
+                            info!("Not executing command, unauthorized");
+                            if let Err(e) = api::send_reply(
+                                args.clone(),
+                                "You do not have permission to run this command",
+                            )
+                            .await
+                            {
+                                error!("{}", e);
+                            }
+                        }
+                        Err(e) => error!("{}", e),
+                    },
+                    CommandKind::Help => {
+                        let output =
+                            api::main_menu(args.clone(), self.menu.as_ref().unwrap()).await;
+                        if let Err(e) =
+                            api::send_reply(args.clone(), &format!("```{}```", &output)).await
+                        {
+                            error!("{}", e)
+                        }
+                    }
+                };
             }
         }
     }

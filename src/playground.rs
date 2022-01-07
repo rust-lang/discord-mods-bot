@@ -1,12 +1,12 @@
 //! run rust code on the rust-lang playground
 
 use crate::{api, commands::Args, Error};
-
 use reqwest::header;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use tracing::{error, info};
 
 const MAX_OUTPUT_LINES: usize = 45;
 
@@ -67,7 +67,7 @@ enum Channel {
 }
 
 impl FromStr for Channel {
-    type Err = Box<dyn std::error::Error>;
+    type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
@@ -90,7 +90,7 @@ enum Edition {
 }
 
 impl FromStr for Edition {
-    type Err = Box<dyn std::error::Error>;
+    type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
@@ -118,7 +118,7 @@ enum Mode {
 }
 
 impl FromStr for Mode {
-    type Err = Box<dyn std::error::Error>;
+    type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
@@ -172,7 +172,8 @@ async fn run_code(args: Arc<Args>, code: String) -> Result<String, Error> {
         .http
         .post("https://play.rust-lang.org/execute")
         .json(&request)
-        .send().await?;
+        .send()
+        .await?;
 
     let result: PlayResult = resp.json().await?;
 
@@ -201,7 +202,11 @@ async fn run_code(args: Arc<Args>, code: String) -> Result<String, Error> {
     )
 }
 
-async fn get_playground_link(args: Arc<Args>, code: String, request: PlaygroundCode) -> Result<String, Error> {
+async fn get_playground_link(
+    args: Arc<Args>,
+    code: String,
+    request: PlaygroundCode,
+) -> Result<String, Error> {
     let mut payload = HashMap::new();
     payload.insert("code", code);
 
@@ -210,7 +215,8 @@ async fn get_playground_link(args: Arc<Args>, code: String, request: PlaygroundC
         .post("https://play.rust-lang.org/meta/gist/")
         .header(header::REFERER, "https://discord.gg/rust-lang")
         .json(&payload)
-        .send().await?;
+        .send()
+        .await?;
 
     let resp: HashMap<String, String> = resp.json().await?;
     info!("gist response: {:?}", resp);
@@ -224,14 +230,15 @@ pub async fn run(args: Arc<Args>) -> Result<(), Error> {
     let code = args
         .params
         .get("code")
+        .map(String::from)
         .ok_or("Unable to retrieve param: query")?;
 
     let result = run_code(args.clone(), code).await?;
-    api::send_reply(&args, &result).await?;
+    api::send_reply(args.clone(), &result).await?;
     Ok(())
 }
 
-pub fn help(args: Args, name: &str) -> Result<(), Error> {
+pub async fn help(args: Arc<Args>, name: &str) -> Result<(), Error> {
     let message = format!(
         "Compile and run rust code. All code is executed on https://play.rust-lang.org.
 ```?{} mode={{}} channel={{}} edition={{}} warn={{}} ``\u{200B}`code``\u{200B}` ```
@@ -244,7 +251,7 @@ Optional arguments:
         name
     );
 
-    api::send_reply(&args, &message)?;
+    api::send_reply(args.clone(), &message).await?;
     Ok(())
 }
 
@@ -255,7 +262,7 @@ pub async fn err(args: Arc<Args>) -> Result<(), Error> {
 \\`\\`\\`
     ";
 
-    api::send_reply(&args, message)?;
+    api::send_reply(args.clone(), message).await?;
     Ok(())
 }
 
@@ -263,15 +270,20 @@ pub async fn eval(args: Arc<Args>) -> Result<(), Error> {
     let code = args
         .params
         .get("code")
+        .map(String::from)
         .ok_or("Unable to retrieve param: query")?;
 
     if code.contains("fn main") {
-        api::send_reply(&args, "code passed to ?eval should not contain `fn main`")?;
+        api::send_reply(
+            args.clone(),
+            "code passed to ?eval should not contain `fn main`",
+        )
+        .await?;
     } else {
         let code = format!("fn main(){{ println!(\"{{:?}}\",{{ {} }}); }}", code);
 
-        let result = run_code(&args, &code)?;
-        api::send_reply(&args, &result)?;
+        let result = run_code(args.clone(), code).await?;
+        api::send_reply(args.clone(), &result).await?;
     }
 
     Ok(())
@@ -286,6 +298,6 @@ pub async fn eval_err(args: Arc<Args>) -> Result<(), Error> {
     \\`\\`\\`
     ";
 
-    api::send_reply(&args, message)?;
+    api::send_reply(args.clone(), message).await?;
     Ok(())
 }

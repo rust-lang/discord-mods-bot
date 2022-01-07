@@ -2,6 +2,7 @@ use crate::Error;
 use diesel::prelude::*;
 use diesel::r2d2;
 use lazy_static::lazy_static;
+use tracing::info;
 
 type Pool = r2d2::Pool<r2d2::ConnectionManager<PgConnection>>;
 

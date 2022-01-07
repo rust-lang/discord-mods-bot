@@ -1,36 +1,37 @@
-use crate::{api, commands::Args, db::DB, schema::tags, Error};
-
-use diesel::prelude::*;
+use crate::{api, commands::Args, Error};
 
 use std::sync::Arc;
 
 /// Remove a key value pair from the tags.  
 pub async fn delete(args: Arc<Args>) -> Result<(), Error> {
-    let conn = DB.get()?;
     let key = args
         .params
         .get("key")
         .ok_or("Unable to retrieve param: key")?;
 
-    match diesel::delete(tags::table.filter(tags::key.eq(key))).execute(&conn) {
-        Ok(_) => {
-            args.msg.react(&args.cx, '✅').await?;
-        }
-        Err(_) => {
+    let query = sqlx::query("delete from tags where key = $1")
+        .bind(key)
+        .execute(&*args.clone().db)
+        .await?;
+
+    match query.rows_affected() {
+        0 => {
             api::send_reply(
                 args.clone(),
                 "A database error occurred when deleting the tag.",
             )
-            .await?
+            .await?;
+        }
+        _ => {
+            args.msg.react(&args.cx, '✅').await?;
         }
     }
+
     Ok(())
 }
 
 /// Add a key value pair to the tags.  
 pub async fn post(args: Arc<Args>) -> Result<(), Error> {
-    let conn = DB.get()?;
-
     let key = args
         .params
         .get("key")
@@ -41,19 +42,22 @@ pub async fn post(args: Arc<Args>) -> Result<(), Error> {
         .get("value")
         .ok_or("Unable to retrieve param: value")?;
 
-    match diesel::insert_into(tags::table)
-        .values((tags::key.eq(key), tags::value.eq(value)))
-        .execute(&conn)
-    {
-        Ok(_) => {
-            args.msg.react(&args.cx, '✅').await?;
-        }
-        Err(_) => {
+    let query = sqlx::query("insert into tags(key, value) values ($1, $2)")
+        .bind(key)
+        .bind(value)
+        .execute(&*args.clone().db)
+        .await?;
+
+    match query.rows_affected() {
+        0 => {
             api::send_reply(
                 args.clone(),
                 "A database error occurred when creating the tag.",
             )
             .await?
+        }
+        _ => {
+            args.msg.react(&args.cx, '✅').await?;
         }
     }
     Ok(())
@@ -61,8 +65,6 @@ pub async fn post(args: Arc<Args>) -> Result<(), Error> {
 
 /// Update an existing tag.
 pub async fn update(args: Arc<Args>) -> Result<(), Error> {
-    let conn = DB.get()?;
-
     let key = args
         .params
         .get("key")
@@ -73,39 +75,42 @@ pub async fn update(args: Arc<Args>) -> Result<(), Error> {
         .get("value")
         .ok_or("Unable to retrieve param: value")?;
 
-    match diesel::update(tags::table.filter(tags::key.eq(key)))
-        .set(tags::value.eq(value))
-        .execute(&conn)
-    {
-        Ok(_) => {
-            args.msg.react(&args.cx, '✅').await?;
-        }
-        Err(_) => {
+    let query = sqlx::query("update tags set value = $1 where key = $2")
+        .bind(value)
+        .bind(key)
+        .execute(&*args.clone().db)
+        .await?;
+
+    match query.rows_affected() {
+        0 => {
             api::send_reply(
                 args.clone(),
                 "A database error occurred when updating the tag.",
             )
             .await?
         }
+        _ => {
+            args.msg.react(&args.cx, '✅').await?;
+        }
     }
 
     Ok(())
 }
 
-/// Retrieve a value by key from the tags.  
+/// Retrieve a value by key from the tags.
 pub async fn get(args: Arc<Args>) -> Result<(), Error> {
-    let conn = DB.get()?;
-
     let key = args.params.get("key").ok_or("unable to read params")?;
 
-    let results = tags::table
-        .filter(tags::key.eq(key))
-        .load::<(i32, String, String)>(&conn)?;
+    let results: Option<(i32, String, String)> =
+        sqlx::query_as("select * from tags where key = $1 limit 1")
+            .bind(key)
+            .fetch_optional(&*args.db)
+            .await?;
 
-    if results.is_empty() {
-        api::send_reply(args.clone(), &format!("Tag not found for `{}`", key)).await?;
+    if let Some(query_result) = results {
+        api::send_reply(args.clone(), &query_result.2).await?;
     } else {
-        api::send_reply(args.clone(), &results[0].2).await?;
+        api::send_reply(args.clone(), &format!("Tag not found for `{}`", key)).await?;
     }
 
     Ok(())
@@ -113,9 +118,9 @@ pub async fn get(args: Arc<Args>) -> Result<(), Error> {
 
 /// Retrieve all tags
 pub async fn get_all(args: Arc<Args>) -> Result<(), Error> {
-    let conn = DB.get()?;
-
-    let results = tags::table.load::<(i32, String, String)>(&conn)?;
+    let results: Vec<(i32, String, String)> = sqlx::query_as("select * from tags")
+        .fetch_all(&*args.db)
+        .await?;
 
     if results.is_empty() {
         api::send_reply(args.clone(), "No tags found").await?;

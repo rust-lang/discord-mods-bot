@@ -1,61 +1,63 @@
-use crate::{
-    api, commands::Args, db::DB, schema::bans, text::ban_message, Error, SendSyncError, HOUR,
-};
-use diesel::prelude::*;
+use crate::{api, commands::Args, db::DB, schema::bans, text::ban_message, Error, HOUR};
 use serenity::{model::prelude::*, prelude::*, utils::parse_username};
+use sqlx::{
+    postgres::PgPool,
+    types::chrono::{DateTime, Utc},
+};
 use std::{
     sync::Arc,
     time::{Duration, SystemTime},
 };
+use tracing::info;
 
-pub fn save_ban(user_id: String, guild_id: String, hours: u64) -> Result<(), Error> {
+pub async fn save_ban(
+    user_id: String,
+    guild_id: String,
+    hours: u64,
+    db: Arc<PgPool>,
+) -> Result<(), Error> {
     info!("Recording ban for user {}", &user_id);
     let conn = DB.get()?;
-    diesel::insert_into(bans::table)
-        .values((
-            bans::user_id.eq(user_id),
-            bans::guild_id.eq(guild_id),
-            bans::start_time.eq(SystemTime::now()),
-            bans::end_time.eq(SystemTime::now()
-                .checked_add(Duration::new(hours * HOUR, 0))
-                .ok_or("out of range Duration for ban end_time")?),
-        ))
-        .execute(&conn)?;
-
-    Ok(())
-}
-
-pub fn save_unban(user_id: String, guild_id: String) -> Result<(), Error> {
-    info!("Recording unban for user {}", &user_id);
-    let conn = DB.get()?;
-    diesel::update(bans::table)
-        .filter(
-            bans::user_id
-                .eq(user_id)
-                .and(bans::guild_id.eq(guild_id).and(bans::unbanned.eq(false))),
-        )
-        .set(bans::unbanned.eq(true))
-        .execute(&conn)?;
-
-    Ok(())
-}
-
-pub async fn unban_users(cx: &Context) -> Result<(), SendSyncError> {
-    use std::str::FromStr;
-
-    let to_unban = tokio::task::spawn_blocking(move || -> Result<Vec<(i32, String, String, bool, SystemTime, SystemTime)>, SendSyncError> {
-        let conn = DB.get()?;
-        Ok(bans::table
-            .filter(
-                bans::unbanned
-                    .eq(false)
-                    .and(bans::end_time.le(SystemTime::now())),
-            )
-            .load::<(i32, String, String, bool, SystemTime, SystemTime)>(&conn)?)
-    })
+    sqlx::query(
+        "insert into bans(user_id, guild_id, start_time, end_time) values ($1, $2, $3, $4)",
+    )
+    .bind(user_id)
+    .bind(guild_id)
+    .bind(DateTime::<Utc>::from(SystemTime::now()))
+    .bind(DateTime::<Utc>::from(
+        SystemTime::now()
+            .checked_add(Duration::new(hours * HOUR, 0))
+            .ok_or("out of range Duration for ban end_time")?,
+    ))
+    .execute(&*db)
     .await?;
 
-    for row in &to_unban? {
+    Ok(())
+}
+
+pub async fn save_unban(user_id: String, guild_id: String, db: Arc<PgPool>) -> Result<(), Error> {
+    info!("Recording unban for user {}", &user_id);
+    sqlx::query(
+        "update bans set unbanned = true where user_id = $1 and guild_id = $2 and unbanned = false",
+    )
+    .bind(user_id)
+    .bind(guild_id)
+    .execute(&*db)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn unban_users(cx: &Context, db: Arc<PgPool>) -> Result<(), Error> {
+    use std::str::FromStr;
+
+    let to_unban: Vec<(i32, String, String, bool, DateTime<Utc>, DateTime<Utc>)> =
+        sqlx::query_as("select * from bans where unbanned = false and end_time < $1")
+            .bind(DateTime::<Utc>::from(SystemTime::now()))
+            .fetch_all(&*db)
+            .await?;
+
+    for row in &to_unban {
         let guild_id = GuildId::from(u64::from_str(&row.2)?);
         info!("Unbanning user {}", &row.1);
         guild_id.unban(&cx, u64::from_str(&row.1)?).await?;
@@ -100,7 +102,13 @@ pub async fn temp_ban(args: Arc<Args>) -> Result<(), Error> {
 
         guild.ban(&args.cx, &user, 7).await?;
 
-        save_ban(format!("{}", user_id), format!("{}", guild.id), hours)?;
+        save_ban(
+            format!("{}", user_id),
+            format!("{}", guild.id),
+            hours,
+            args.db.clone(),
+        )
+        .await?;
     }
     Ok(())
 }

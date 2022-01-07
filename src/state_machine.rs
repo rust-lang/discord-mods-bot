@@ -243,6 +243,16 @@ impl StateMachine {
             traversals = next_traversals;
 
             if traversals.is_empty() {
+                use std::iter::repeat;
+
+                // TODO: return Recognized or Unrecognized and handle the unrecognized case with an
+                // error handler similar to below
+                println!("{}", input);
+                let annotation = repeat(' ')
+                    .take(i)
+                    .chain(repeat('^').take(input.len() - i))
+                    .collect::<String>();
+                println!("{}", annotation);
                 return None;
             }
         }
