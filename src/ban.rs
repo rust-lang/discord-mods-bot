@@ -1,4 +1,4 @@
-use crate::{api, commands::Args, db::DB, schema::bans, text::ban_message, Error, HOUR};
+use crate::{api, commands::Args, text::ban_message, Error, HOUR};
 use serenity::{model::prelude::*, prelude::*, utils::parse_username};
 use sqlx::{
     postgres::PgPool,
@@ -17,7 +17,6 @@ pub async fn save_ban(
     db: Arc<PgPool>,
 ) -> Result<(), Error> {
     info!("Recording ban for user {}", &user_id);
-    let conn = DB.get()?;
     sqlx::query(
         "insert into bans(user_id, guild_id, start_time, end_time) values ($1, $2, $3, $4)",
     )

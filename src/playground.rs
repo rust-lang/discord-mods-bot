@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::info;
 
 const MAX_OUTPUT_LINES: usize = 45;
 
@@ -139,10 +139,10 @@ struct PlayResult {
 async fn run_code(args: Arc<Args>, code: String) -> Result<String, Error> {
     let mut errors = String::new();
 
-    let warnings = String::from(args.params.get("warn").unwrap_or(&"false".to_string()));
-    let channel = String::from(args.params.get("channel").unwrap_or(&"nightly".to_string()));
-    let mode = String::from(args.params.get("mode").unwrap_or(&"debug".to_string()));
-    let edition = String::from(args.params.get("edition").unwrap_or(&"2018".to_string()));
+    let warnings = args.params.get("warn").map(|s| &s[..]).unwrap_or("false");
+    let channel = args.params.get("channel").map(|s| &s[..]).unwrap_or("nightly");
+    let mode = args.params.get("mode").map(|s| &s[..]).unwrap_or("debug");
+    let edition = args.params.get("edition").map(|s| &s[..]).unwrap_or("2021");
 
     let mut request = PlaygroundCode::new(code.clone());
 
@@ -245,7 +245,7 @@ pub async fn help(args: Arc<Args>, name: &str) -> Result<(), Error> {
 Optional arguments:
     \tmode: debug, release (default: debug)
     \tchannel: stable, beta, nightly (default: nightly)
-    \tedition: 2015, 2018, 2021 (default: 2018)
+    \tedition: 2015, 2018, 2021 (default: 2021)
     \twarn: boolean flag to enable compilation warnings
     ",
         name
@@ -280,7 +280,7 @@ pub async fn eval(args: Arc<Args>) -> Result<(), Error> {
         )
         .await?;
     } else {
-        let code = format!("fn main(){{ println!(\"{{:?}}\",{{ {} }}); }}", code);
+        let code = format!("fn main(){{ println!(\"{{:?}}\",{{ {} \n}}); }}", code);
 
         let result = run_code(args.clone(), code).await?;
         api::send_reply(args.clone(), &result).await?;

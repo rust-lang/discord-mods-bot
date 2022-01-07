@@ -272,7 +272,6 @@ impl StateMachine {
             None
         } else {
             let traversal = &traversals[0];
-            let state = &self.states[traversal.current_state];
 
             Some({
                 Match {
