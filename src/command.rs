@@ -3,23 +3,23 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 type ResultFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send>>;
 
-pub trait AsyncFn<A, T>: 'static {
-    fn call(&self, args: A) -> ResultFuture<T, Error>;
+pub trait AsyncFn<T>: 'static {
+    fn call(&self, args: Arc<Args>) -> ResultFuture<T, Error>;
 }
 
-impl<A, F, G, T> AsyncFn<A, T> for F
+impl<F, G, T> AsyncFn<T> for F
 where
-    F: Fn(A) -> G + 'static,
+    F: Fn(Arc<Args>) -> G + 'static,
     G: Future<Output = Result<T, Error>> + Send + 'static,
 {
-    fn call(&self, args: A) -> ResultFuture<T, Error> {
+    fn call(&self, args: Arc<Args>) -> ResultFuture<T, Error> {
         let fut = (self)(args);
         Box::pin(async move { fut.await })
     }
 }
 
-pub type Handler = dyn AsyncFn<Arc<Args>, ()> + Send + Sync;
-pub type Auth = dyn AsyncFn<Arc<Args>, bool> + Send + Sync;
+pub type Handler = dyn AsyncFn<()> + Send + Sync;
+pub type Auth = dyn AsyncFn<bool> + Send + Sync;
 
 pub enum CommandKind {
     Base,
