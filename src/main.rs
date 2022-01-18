@@ -43,13 +43,19 @@ struct Config {
     wg_and_teams_id: Option<String>,
 }
 
-async fn upsert_role(name: &str, role_id: &str, transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<(), Error> {
-    sqlx::query("insert into roles(role, name) values ($1, $2)
-                on conflict (name) do update set role = $1")
-        .bind(role_id)
-        .bind(name)
-        .execute(transaction)
-        .await?;
+async fn upsert_role(
+    name: &str,
+    role_id: &str,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), Error> {
+    sqlx::query(
+        "insert into roles(role, name) values ($1, $2)
+                on conflict (name) do update set role = $1",
+    )
+    .bind(role_id)
+    .bind(name)
+    .execute(transaction)
+    .await?;
 
     Ok(())
 }
