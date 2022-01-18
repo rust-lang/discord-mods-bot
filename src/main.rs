@@ -23,8 +23,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 pub const HOUR: u64 = 3600;
 
-use crate::{command::Command, commands::Commands, db::DB};
-use diesel::prelude::*;
+use crate::{command::Command, commands::Commands};
 use indexmap::IndexMap;
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
@@ -44,40 +43,34 @@ struct Config {
     wg_and_teams_id: Option<String>,
 }
 
-fn init_data(config: &Config) -> Result<(), Error> {
-    use crate::schema::roles;
+async fn upsert_role(name: &str, role_id: &str, transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<(), Error> {
+    sqlx::query("insert into roles(role, name) values ($1, $2)
+                on conflict (name) do update set role = $1")
+        .bind(role_id)
+        .bind(name)
+        .execute(transaction)
+        .await?;
+
+    Ok(())
+}
+
+async fn init_data(config: &Config, pool: Arc<PgPool>) -> Result<(), Error> {
     info!("Loading data into database");
 
-    let conn = DB.get()?;
+    let mut transaction = pool.begin().await?;
 
-    let upsert_role = |name: &str, role_id: &str| -> Result<(), Error> {
-        diesel::insert_into(roles::table)
-            .values((roles::role.eq(role_id), roles::name.eq(name)))
-            .on_conflict(roles::name)
-            .do_update()
-            .set(roles::role.eq(role_id))
-            .execute(&conn)?;
+    upsert_role("mod", &config.mod_id, &mut transaction).await?;
+    upsert_role("talk", &config.talk_id, &mut transaction).await?;
 
-        Ok(())
-    };
+    if config.tags || config.crates {
+        let wg_and_teams_role = config
+            .wg_and_teams_id
+            .as_ref()
+            .ok_or(text::WG_AND_TEAMS_MISSING_ENV_VAR)?;
+        upsert_role("wg_and_teams", &wg_and_teams_role, &mut transaction).await?;
+    }
 
-    let _ = conn
-        .build_transaction()
-        .read_write()
-        .run::<_, Error, _>(|| {
-            upsert_role("mod", &config.mod_id)?;
-            upsert_role("talk", &config.talk_id)?;
-
-            if config.tags || config.crates {
-                let wg_and_teams_role = config
-                    .wg_and_teams_id
-                    .as_ref()
-                    .ok_or(text::WG_AND_TEAMS_MISSING_ENV_VAR)?;
-                upsert_role("wg_and_teams", &wg_and_teams_role)?;
-            }
-
-            Ok(())
-        })?;
+    transaction.commit().await?;
 
     Ok(())
 }
@@ -97,7 +90,7 @@ async fn app() -> Result<(), Error> {
 
     let _ = db::run_migrations()?;
 
-    let _ = init_data(&config)?;
+    let _ = init_data(&config, pool.clone()).await?;
 
     let mut cmds = Commands::new();
 
