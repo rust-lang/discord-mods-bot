@@ -1,4 +1,8 @@
-use crate::{command::Auth, command_history::CommandHistory, commands::Args, Error};
+use crate::{
+    command_history::CommandHistory,
+    commands::{Args, Auth},
+    Error,
+};
 use indexmap::IndexMap;
 use serenity::{model::prelude::*, utils::parse_username};
 use std::sync::Arc;

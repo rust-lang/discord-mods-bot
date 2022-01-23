@@ -6,7 +6,6 @@ extern crate diesel_migrations;
 
 mod api;
 mod ban;
-mod command;
 mod command_history;
 mod commands;
 mod crates;
@@ -23,7 +22,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 pub const HOUR: u64 = 3600;
 
-use crate::{command::Command, commands::Commands};
+use crate::commands::{Command, Commands};
 use indexmap::IndexMap;
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
