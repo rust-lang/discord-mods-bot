@@ -81,7 +81,7 @@ async fn init_data(config: &Config, pool: Arc<PgPool>) -> Result<(), Error> {
 }
 
 async fn app() -> Result<(), Error> {
-    let config = envy::from_env::<Config>().unwrap();
+    let config = envy::from_env::<Config>()?;
 
     tracing_subscriber::fmt::init();
 
