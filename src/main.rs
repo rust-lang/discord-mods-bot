@@ -287,7 +287,7 @@ impl EventHandler for Events {
         let history = data.get_mut::<command_history::CommandHistory>().unwrap();
         if let Some(response_id) = history.remove(&message_id) {
             info!("deleting message: {:?}", response_id);
-            let _ = channel_id.delete_message(&cx, response_id);
+            let _ = channel_id.delete_message(&cx, response_id).await;
         }
     }
 
