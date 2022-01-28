@@ -1,19 +1,26 @@
-use crate::{command_history::CommandHistory, commands::Args, db::DB, schema::roles, Error};
-use diesel::prelude::*;
+use crate::{
+    command_history::CommandHistory,
+    commands::{Args, Auth},
+    Error,
+};
+use indexmap::IndexMap;
 use serenity::{model::prelude::*, utils::parse_username};
+use std::sync::Arc;
+use tracing::info;
 
 /// Send a reply to the channel the message was received on.  
-pub(crate) fn send_reply(args: &Args, message: &str) -> Result<(), Error> {
-    if let Some(response_id) = response_exists(args) {
+pub async fn send_reply(args: Arc<Args>, message: &str) -> Result<(), Error> {
+    if let Some(response_id) = response_exists(args.clone()).await {
         info!("editing message: {:?}", response_id);
         args.msg
             .channel_id
-            .edit_message(&args.cx, response_id, |msg| msg.content(message))?;
+            .edit_message(&args.clone().cx, response_id, |msg| msg.content(message))
+            .await?;
     } else {
         let command_id = args.msg.id;
-        let response = args.msg.channel_id.say(&args.cx, message)?;
+        let response = args.clone().msg.channel_id.say(&args.cx, message).await?;
 
-        let mut data = args.cx.data.write();
+        let mut data = args.cx.data.write().await;
         let history = data.get_mut::<CommandHistory>().unwrap();
         history.insert(command_id, response.id);
     }
@@ -21,14 +28,14 @@ pub(crate) fn send_reply(args: &Args, message: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn response_exists(args: &Args) -> Option<MessageId> {
-    let data = args.cx.data.read();
+async fn response_exists(args: Arc<Args>) -> Option<MessageId> {
+    let data = args.cx.data.read().await;
     let history = data.get::<CommandHistory>().unwrap();
     history.get(&args.msg.id).cloned()
 }
 
 /// Determine if a member sending a message has the `Role`.  
-pub(crate) fn has_role(args: &Args, role: &RoleId) -> Result<bool, Error> {
+pub fn has_role(args: Arc<Args>, role: &RoleId) -> Result<bool, Error> {
     Ok(args
         .msg
         .member
@@ -38,41 +45,71 @@ pub(crate) fn has_role(args: &Args, role: &RoleId) -> Result<bool, Error> {
         .contains(role))
 }
 
-fn check_permission(args: &Args, role: Option<String>) -> Result<bool, Error> {
+fn check_permission(args: Arc<Args>, role: Option<String>) -> Result<bool, Error> {
     use std::str::FromStr;
     if let Some(role_id) = role {
-        Ok(has_role(args, &RoleId::from(u64::from_str(&role_id)?))?)
+        Ok(has_role(
+            args.clone(),
+            &RoleId::from(u64::from_str(&role_id)?),
+        )?)
     } else {
         Ok(false)
     }
 }
 
 /// Return whether or not the user is a mod.  
-pub(crate) fn is_mod(args: &Args) -> Result<bool, Error> {
-    let role = roles::table
-        .filter(roles::name.eq("mod"))
-        .first::<(i32, String, String)>(&DB.get()?)
-        .optional()?;
+pub async fn is_mod(args: Arc<Args>) -> Result<bool, Error> {
+    let role: Option<(i32, String, String)> =
+        sqlx::query_as("select * from roles where name = 'mod'")
+            .fetch_optional(&*args.db)
+            .await?;
 
-    check_permission(args, role.map(|(_, role_id, _)| role_id))
+    check_permission(args.clone(), role.map(|(_, role_id, _)| role_id))
 }
 
-pub(crate) fn is_wg_and_teams(args: &Args) -> Result<bool, Error> {
-    let role = roles::table
-        .filter(roles::name.eq("wg_and_teams"))
-        .first::<(i32, String, String)>(&DB.get()?)
-        .optional()?;
+pub async fn is_wg_and_teams(args: Arc<Args>) -> Result<bool, Error> {
+    let role: Option<(i32, String, String)> =
+        sqlx::query_as("select * from roles where name = 'wg_and_teams'")
+            .fetch_optional(&*args.db)
+            .await?;
 
-    check_permission(args, role.map(|(_, role_id, _)| role_id))
+    check_permission(args.clone(), role.map(|(_, role_id, _)| role_id))
+}
+
+pub async fn main_menu(
+    args: Arc<Args>,
+    commands: &IndexMap<&'static str, (&'static str, &'static Auth)>,
+) -> String {
+    use futures::stream::{self, StreamExt};
+
+    let mut menu = format!("Commands:\n");
+
+    menu = stream::iter(commands)
+        .fold(menu, |mut menu, (base_cmd, (description, auth))| {
+            let args_clone = args.clone();
+            async move {
+                if let Ok(true) = auth.call(args_clone).await {
+                    menu += &format!("\t{cmd:<12}{desc}\n", cmd = base_cmd, desc = description);
+                }
+                menu
+            }
+        })
+        .await;
+
+    menu += &format!("\t{help:<12}This menu\n", help = "?help");
+    menu += "\nType ?help command for more info on a command.";
+    menu += "\n\nAdditional Info:\n";
+    menu += "\tYou can edit your message to the bot and the bot will edit its response.";
+    menu
 }
 
 /// Set slow mode for a channel.  
 ///
 /// A `seconds` value of 0 will disable slowmode
-pub(crate) fn slow_mode(args: Args) -> Result<(), Error> {
+pub async fn slow_mode(args: Arc<Args>) -> Result<(), Error> {
     use std::str::FromStr;
 
-    if is_mod(&args)? {
+    if is_mod(args.clone()).await? {
         let seconds = &args
             .params
             .get("seconds")
@@ -85,12 +122,14 @@ pub(crate) fn slow_mode(args: Args) -> Result<(), Error> {
             .ok_or("unable to retrieve channel param")?;
 
         info!("Applying slowmode to channel {}", &channel_name);
-        ChannelId::from_str(channel_name)?.edit(&args.cx, |c| c.slow_mode_rate(*seconds))?;
+        ChannelId::from_str(channel_name)?
+            .edit(&args.cx, |c| c.slow_mode_rate(*seconds))
+            .await?;
     }
     Ok(())
 }
 
-pub(crate) fn slow_mode_help(args: Args) -> Result<(), Error> {
+pub async fn slow_mode_help(args: Arc<Args>) -> Result<(), Error> {
     let help_string = "
 Set slowmode on a channel
 ```
@@ -107,15 +146,15 @@ will set slowmode on the `#bot-usage` channel with a delay of 10 seconds.
 ?slowmode #bot-usage 0
 ```
 will disable slowmode on the `#bot-usage` channel.";
-    send_reply(&args, &help_string)?;
+    send_reply(args.clone(), &help_string).await?;
     Ok(())
 }
 
 /// Kick a user from the guild.  
 ///
 /// Requires the kick members permission
-pub(crate) fn kick(args: Args) -> Result<(), Error> {
-    if is_mod(&args)? {
+pub async fn kick(args: Arc<Args>) -> Result<(), Error> {
+    if is_mod(args.clone()).await? {
         let user_id = parse_username(
             &args
                 .params
@@ -124,15 +163,15 @@ pub(crate) fn kick(args: Args) -> Result<(), Error> {
         )
         .ok_or("unable to retrieve user id")?;
 
-        if let Some(guild) = args.msg.guild(&args.cx) {
+        if let Some(guild) = args.msg.guild(&args.cx).await {
             info!("Kicking user from guild");
-            guild.read().kick(&args.cx, UserId::from(user_id))?
+            guild.kick(&args.cx, UserId::from(user_id)).await?
         }
     }
     Ok(())
 }
 
-pub(crate) fn kick_help(args: Args) -> Result<(), Error> {
+pub async fn kick_help(args: Arc<Args>) -> Result<(), Error> {
     let help_string = "
 Kick a user from the guild
 ```
@@ -143,6 +182,6 @@ Kick a user from the guild
 ?kick @someuser
 ```
 will kick a user from the guild.";
-    send_reply(&args, &help_string)?;
+    send_reply(args.clone(), &help_string).await?;
     Ok(())
 }

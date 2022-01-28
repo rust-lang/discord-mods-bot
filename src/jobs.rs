@@ -1,23 +1,26 @@
-use crate::{ban::unban_users, command_history::clear_command_history, SendSyncError, HOUR};
+use crate::{ban::unban_users, command_history::clear_command_history, Error, HOUR};
 use serenity::client::Context;
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    thread::sleep,
-    time::Duration,
+use sqlx::postgres::PgPool;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
+use tokio::time::{sleep, Duration};
 
 static JOBS_THREAD_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn start_jobs(cx: Context) {
+pub fn start_jobs(cx: Context, db: Arc<PgPool>) {
     if !JOBS_THREAD_INITIALIZED.load(Ordering::SeqCst) {
         JOBS_THREAD_INITIALIZED.store(true, Ordering::SeqCst);
-        std::thread::spawn(move || -> Result<(), SendSyncError> {
+        tokio::spawn(async move {
             loop {
-                unban_users(&cx)?;
-                clear_command_history(&cx)?;
+                unban_users(&cx, db.clone()).await?;
+                clear_command_history(&cx).await?;
 
-                sleep(Duration::new(HOUR, 0));
+                sleep(Duration::new(HOUR, 0)).await;
             }
+
+            Ok::<_, Error>(())
         });
     }
 }

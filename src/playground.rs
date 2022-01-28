@@ -1,27 +1,28 @@
 //! run rust code on the rust-lang playground
 
 use crate::{api, commands::Args, Error};
-
 use reqwest::header;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
+use tracing::info;
 
 const MAX_OUTPUT_LINES: usize = 45;
 
 #[derive(Debug, Serialize)]
-struct PlaygroundCode<'a> {
+struct PlaygroundCode {
     channel: Channel,
     edition: Edition,
-    code: &'a str,
+    code: String,
     #[serde(rename = "crateType")]
     crate_type: CrateType,
     mode: Mode,
     tests: bool,
 }
 
-impl<'a> PlaygroundCode<'a> {
-    fn new(code: &'a str) -> Self {
+impl PlaygroundCode {
+    fn new(code: String) -> Self {
         PlaygroundCode {
             channel: Channel::Nightly,
             edition: Edition::E2018,
@@ -66,7 +67,7 @@ enum Channel {
 }
 
 impl FromStr for Channel {
-    type Err = Box<dyn std::error::Error>;
+    type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
@@ -89,7 +90,7 @@ enum Edition {
 }
 
 impl FromStr for Edition {
-    type Err = Box<dyn std::error::Error>;
+    type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
@@ -117,7 +118,7 @@ enum Mode {
 }
 
 impl FromStr for Mode {
-    type Err = Box<dyn std::error::Error>;
+    type Err = Box<dyn std::error::Error + Send + Sync>;
 
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
@@ -135,27 +136,31 @@ struct PlayResult {
     stderr: String,
 }
 
-fn run_code(args: &Args, code: &str) -> Result<String, Error> {
+async fn run_code(args: Arc<Args>, code: String) -> Result<String, Error> {
     let mut errors = String::new();
 
-    let warnings = args.params.get("warn").unwrap_or(&"false");
-    let channel = args.params.get("channel").unwrap_or(&"nightly");
-    let mode = args.params.get("mode").unwrap_or(&"debug");
-    let edition = args.params.get("edition").unwrap_or(&"2021");
+    let warnings = args.params.get("warn").map(|s| &s[..]).unwrap_or("false");
+    let channel = args
+        .params
+        .get("channel")
+        .map(|s| &s[..])
+        .unwrap_or("nightly");
+    let mode = args.params.get("mode").map(|s| &s[..]).unwrap_or("debug");
+    let edition = args.params.get("edition").map(|s| &s[..]).unwrap_or("2021");
 
-    let mut request = PlaygroundCode::new(code);
+    let mut request = PlaygroundCode::new(code.clone());
 
-    match Channel::from_str(channel) {
+    match Channel::from_str(&channel) {
         Ok(c) => request.channel = c,
         Err(e) => errors += &format!("{}\n", e),
     }
 
-    match Mode::from_str(mode) {
+    match Mode::from_str(&mode) {
         Ok(m) => request.mode = m,
         Err(e) => errors += &format!("{}\n", e),
     }
 
-    match Edition::from_str(edition) {
+    match Edition::from_str(&edition) {
         Ok(e) => request.edition = e,
         Err(e) => errors += &format!("{}\n", e),
     }
@@ -165,17 +170,18 @@ fn run_code(args: &Args, code: &str) -> Result<String, Error> {
     }
 
     let message = "*Running code on playground...*";
-    api::send_reply(&args, message)?;
+    api::send_reply(args.clone(), message).await?;
 
     let resp = args
         .http
         .post("https://play.rust-lang.org/execute")
         .json(&request)
-        .send()?;
+        .send()
+        .await?;
 
-    let result: PlayResult = resp.json()?;
+    let result: PlayResult = resp.json().await?;
 
-    let result = if *warnings == "true" {
+    let result = if warnings == "true" {
         format!("{}\n{}", result.stderr, result.stdout)
     } else if result.success {
         result.stdout
@@ -190,7 +196,7 @@ fn run_code(args: &Args, code: &str) -> Result<String, Error> {
             format!(
                 "{}Output too large. Playground link: {}",
                 errors,
-                get_playground_link(args, code, &request)?
+                get_playground_link(args, code, request).await?
             )
         } else if result.len() == 0 {
             format!("{}compilation succeeded.", errors)
@@ -200,7 +206,11 @@ fn run_code(args: &Args, code: &str) -> Result<String, Error> {
     )
 }
 
-fn get_playground_link(args: &Args, code: &str, request: &PlaygroundCode) -> Result<String, Error> {
+async fn get_playground_link(
+    args: Arc<Args>,
+    code: String,
+    request: PlaygroundCode,
+) -> Result<String, Error> {
     let mut payload = HashMap::new();
     payload.insert("code", code);
 
@@ -209,9 +219,10 @@ fn get_playground_link(args: &Args, code: &str, request: &PlaygroundCode) -> Res
         .post("https://play.rust-lang.org/meta/gist/")
         .header(header::REFERER, "https://discord.gg/rust-lang")
         .json(&payload)
-        .send()?;
+        .send()
+        .await?;
 
-    let resp: HashMap<String, String> = resp.json()?;
+    let resp: HashMap<String, String> = resp.json().await?;
     info!("gist response: {:?}", resp);
 
     resp.get("id")
@@ -219,18 +230,19 @@ fn get_playground_link(args: &Args, code: &str, request: &PlaygroundCode) -> Res
         .ok_or_else(|| "no gist found".into())
 }
 
-pub fn run(args: Args) -> Result<(), Error> {
+pub async fn run(args: Arc<Args>) -> Result<(), Error> {
     let code = args
         .params
         .get("code")
+        .map(String::from)
         .ok_or("Unable to retrieve param: query")?;
 
-    let result = run_code(&args, code)?;
-    api::send_reply(&args, &result)?;
+    let result = run_code(args.clone(), code).await?;
+    api::send_reply(args.clone(), &result).await?;
     Ok(())
 }
 
-pub fn help(args: Args, name: &str) -> Result<(), Error> {
+pub async fn help(args: Arc<Args>, name: &str) -> Result<(), Error> {
     let message = format!(
         "Compile and run rust code. All code is executed on https://play.rust-lang.org.
 ```?{} mode={{}} channel={{}} edition={{}} warn={{}} ``\u{200B}`code``\u{200B}` ```
@@ -243,40 +255,45 @@ Optional arguments:
         name
     );
 
-    api::send_reply(&args, &message)?;
+    api::send_reply(args.clone(), &message).await?;
     Ok(())
 }
 
-pub fn err(args: Args) -> Result<(), Error> {
+pub async fn err(args: Arc<Args>) -> Result<(), Error> {
     let message = "Missing code block. Please use the following markdown:
 \\`\\`\\`rust
     code here
 \\`\\`\\`
     ";
 
-    api::send_reply(&args, message)?;
+    api::send_reply(args.clone(), message).await?;
     Ok(())
 }
 
-pub fn eval(args: Args) -> Result<(), Error> {
+pub async fn eval(args: Arc<Args>) -> Result<(), Error> {
     let code = args
         .params
         .get("code")
+        .map(String::from)
         .ok_or("Unable to retrieve param: query")?;
 
     if code.contains("fn main") {
-        api::send_reply(&args, "code passed to ?eval should not contain `fn main`")?;
+        api::send_reply(
+            args.clone(),
+            "code passed to ?eval should not contain `fn main`",
+        )
+        .await?;
     } else {
         let code = format!("fn main(){{ println!(\"{{:?}}\",{{ {} \n}}); }}", code);
 
-        let result = run_code(&args, &code)?;
-        api::send_reply(&args, &result)?;
+        let result = run_code(args.clone(), code).await?;
+        api::send_reply(args.clone(), &result).await?;
     }
 
     Ok(())
 }
 
-pub fn eval_err(args: Args) -> Result<(), Error> {
+pub async fn eval_err(args: Arc<Args>) -> Result<(), Error> {
     let message = "Missing code block. Please use the following markdown:
     \\`code here\\`
     or
@@ -285,6 +302,6 @@ pub fn eval_err(args: Args) -> Result<(), Error> {
     \\`\\`\\`
     ";
 
-    api::send_reply(&args, message)?;
+    api::send_reply(args.clone(), message).await?;
     Ok(())
 }

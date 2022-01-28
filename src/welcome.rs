@@ -1,132 +1,120 @@
-use crate::{
-    api,
-    commands::Args,
-    db::DB,
-    schema::{messages, roles, users},
-    text::WELCOME_BILLBOARD,
-    Error,
-};
-use diesel::prelude::*;
+use crate::{api, commands::Args, text::WELCOME_BILLBOARD, Error};
 use serenity::{model::prelude::*, prelude::*};
+use sqlx::postgres::PgPool;
+use std::sync::Arc;
+use tracing::info;
 
 /// Write the welcome message to the welcome channel.  
-pub(crate) fn post_message(args: Args) -> Result<(), Error> {
+pub async fn post_message(args: Arc<Args>) -> Result<(), Error> {
     use std::str::FromStr;
 
-    if api::is_mod(&args)? {
+    if api::is_mod(args.clone()).await? {
         let channel_name = &args
             .params
             .get("channel")
             .ok_or("unable to retrieve channel param")?;
 
         let channel_id = ChannelId::from_str(channel_name)?;
+
         info!("Posting welcome message");
-        let message = channel_id.say(&args.cx, WELCOME_BILLBOARD)?;
-        let bot_id = &message.author.id;
+        let message = channel_id.say(&args.cx, WELCOME_BILLBOARD).await?;
 
-        let conn = DB.get()?;
+        let message_id = message.id.0.to_string();
+        let bot_id = message.author.id.to_string();
+        let channel_id = channel_id.0.to_string();
 
-        let _ = conn
-            .build_transaction()
-            .read_write()
-            .run::<_, Box<dyn std::error::Error>, _>(|| {
-                let message_id = message.id.0.to_string();
-                let channel_id = channel_id.0.to_string();
+        let mut transaction = args.db.begin().await?;
 
-                diesel::insert_into(messages::table)
-                    .values((
-                        messages::name.eq("welcome"),
-                        messages::message.eq(&message_id),
-                        messages::channel.eq(&channel_id),
-                    ))
-                    .on_conflict(messages::name)
-                    .do_update()
-                    .set((
-                        messages::message.eq(&message_id),
-                        messages::channel.eq(&channel_id),
-                    ))
-                    .execute(&conn)?;
+        let save_message =
+            "insert into messages (name, message, channel) values ('welcome', $1, $2)
+            on conflict (name) do update set message = $1, channel = $2";
+        sqlx::query(save_message)
+            .bind(message_id)
+            .bind(channel_id)
+            .execute(&mut transaction)
+            .await?;
 
-                let user_id = &bot_id.to_string();
+        let user_id = bot_id;
 
-                diesel::insert_into(users::table)
-                    .values((users::user_id.eq(user_id), users::name.eq("me")))
-                    .on_conflict(users::name)
-                    .do_update()
-                    .set((users::name.eq("me"), users::user_id.eq(user_id)))
-                    .execute(&conn)?;
-                Ok(())
-            })?;
+        let save_user = "insert into users (user_id, name) values ($1, 'me')
+            on conflict (name) do update set user_id = $1, name = 'me'";
+        sqlx::query(save_user)
+            .bind(user_id)
+            .execute(&mut transaction)
+            .await?;
 
-        let white_check_mark = ReactionType::from("✅");
-        message.react(args.cx, white_check_mark)?;
+        transaction.commit().await?;
+
+        let white_check_mark = ReactionType::from_str("✅")?;
+        message.react(&args.cx, white_check_mark).await?;
     }
     Ok(())
 }
 
-pub(crate) fn assign_talk_role(cx: &Context, reaction: &Reaction) -> Result<(), Error> {
-    let channel = reaction.channel(cx)?;
+pub async fn assign_talk_role(
+    cx: &Context,
+    reaction: &Reaction,
+    db: Arc<PgPool>,
+) -> Result<(), Error> {
+    let channel = reaction.channel(cx).await?;
     let channel_id = ChannelId::from(&channel);
-    let message = reaction.message(cx)?;
+    let message = reaction.message(cx).await?;
 
-    let conn = DB.get()?;
+    let mut transaction = db.begin().await?;
 
-    let (msg, talk_role, me) = conn
-        .build_transaction()
-        .read_only()
-        .run::<_, Box<dyn std::error::Error>, _>(|| {
-            let msg: Option<_> = messages::table
-                .filter(messages::name.eq("welcome"))
-                .first::<(i32, String, String, String)>(&conn)
-                .optional()?;
+    let msg: Option<(i32, String, String, String)> =
+        sqlx::query_as("select * from messages where name = 'welcome' limit 1")
+            .fetch_optional(&mut transaction)
+            .await?;
 
-            let role: Option<_> = roles::table
-                .filter(roles::name.eq("talk"))
-                .first::<(i32, String, String)>(&conn)
-                .optional()?;
+    let talk_role: Option<(i32, String, String)> =
+        sqlx::query_as("select * from roles where name = 'talk' limit 1")
+            .fetch_optional(&mut transaction)
+            .await?;
 
-            let me: Option<_> = users::table
-                .filter(users::name.eq("me"))
-                .first::<(i32, String, String)>(&conn)
-                .optional()?;
+    let me: Option<(i32, String, String)> =
+        sqlx::query_as("select * from users where name = 'me' limit 1")
+            .fetch_optional(&mut transaction)
+            .await?;
 
-            Ok((msg, role, me))
-        })?;
+    transaction.commit().await?;
 
     if let Some((_, _, cached_message_id, cached_channel_id)) = msg {
         if message.id.0.to_string() == cached_message_id
             && channel_id.0.to_string() == *cached_channel_id
         {
-            if reaction.emoji == ReactionType::from("✅") {
+            if reaction.emoji == ReactionType::from('✅') {
                 if let Some((_, role_id, _)) = talk_role {
-                    let user_id = reaction.user_id;
+                    if let Some(user_id) = reaction.user_id {
+                        let guild = channel
+                            .guild()
+                            .ok_or("Unable to retrieve guild from channel")?;
 
-                    let guild = channel
-                        .guild()
-                        .ok_or("Unable to retrieve guild from channel")?;
+                        let mut member = guild.guild_id.member(cx, user_id).await?;
 
-                    let mut member = guild.read().guild_id.member(cx, &user_id)?;
+                        use std::str::FromStr;
+                        info!("Assigning talk role to {}", &member.user.id);
+                        member
+                            .add_role(&cx, RoleId::from(u64::from_str(&role_id)?))
+                            .await?;
 
-                    use std::str::FromStr;
-                    info!("Assigning talk role to {}", &member.user_id());
-                    member.add_role(&cx, RoleId::from(u64::from_str(&role_id)?))?;
-
-                    // Requires ManageMessage permission
-                    if let Some((_, _, user_id)) = me {
-                        if reaction.user_id.0.to_string() != user_id {
-                            reaction.delete(cx)?;
+                        // Requires ManageMessage permission
+                        if let Some((_, _, bot_id)) = me {
+                            if user_id.to_string() != bot_id {
+                                reaction.delete(cx).await?;
+                            }
                         }
                     }
                 }
             } else {
-                reaction.delete(cx)?;
+                reaction.delete(cx).await?;
             }
         }
     }
     Ok(())
 }
 
-pub(crate) fn help(args: Args) -> Result<(), Error> {
+pub async fn help(args: Arc<Args>) -> Result<(), Error> {
     let help_string = format!(
         "
 Post the welcome message to `channel`
@@ -143,6 +131,6 @@ will post the welcome message to the `channel` specified.
         command = "?CoC {channel}"
     );
 
-    api::send_reply(&args, &help_string)?;
+    api::send_reply(args.clone(), &help_string).await?;
     Ok(())
 }

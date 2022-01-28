@@ -8,14 +8,36 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = { version = "0.8.7", features = ["model"] }
-diesel = { version = "1.4.0", features = ["postgres", "r2d2"] }
+futures = { version = "0.3" }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3" }
+diesel = { version = "1.4.0", features = ["postgres"] }
 diesel_migrations = { version = "1.4.0", features = ["postgres"] }
-reqwest = { version = "0.10", features = ["blocking", "json"] }
 serde = "1.0"
 serde_derive = "1.0"
-lazy_static = "1.4.0"
-log = "0.4.0"
-env_logger = "0.7.1"
 envy = "0.4"
 indexmap = "1.6"
+
+
+[dependencies.sqlx]
+features = [
+    "runtime-tokio-native-tls",
+    "postgres",
+    "chrono",
+]
+version = "0.5"
+
+[dependencies.serenity]
+default-features = false
+features = [
+    "builder",
+    "cache",
+    "client",
+    "gateway",
+    "model",
+    "utils",
+    "rustls_backend",
+]
+version = "0.10"
