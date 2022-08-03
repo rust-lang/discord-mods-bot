@@ -38,7 +38,7 @@ RUN cargo build --release
 RUN rm -rf /tmp/source/src
 COPY src /tmp/source/src
 COPY migrations /tmp/source/migrations
-RUN find -name "*.rs" -exec touch {} \; && cargo build --release
+RUN find src -name "*.rs" -exec touch {} \; && cargo build --release
 
 ##################
 #  Output image  #
