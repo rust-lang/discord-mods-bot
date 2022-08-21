@@ -14,9 +14,8 @@ struct Crates {
 struct Crate {
     id: String,
     name: String,
-    #[serde(rename = "newest_version")]
-    version: String,
-    max_stable_version: String,
+    newest_version: String,
+    max_stable_version: Option<String>,
     #[serde(rename = "updated_at")]
     updated: String,
     downloads: u64,
@@ -55,7 +54,14 @@ pub async fn search(args: Arc<Args>) -> Result<(), Error> {
                     e.title(&krate.name)
                         .url(format!("https://crates.io/crates/{}", krate.id))
                         .description(&krate.description)
-                        .field("version", &krate.max_stable_version, true)
+                        .field(
+                            "version",
+                            krate
+                                .max_stable_version
+                                .as_ref()
+                                .unwrap_or(&krate.newest_version),
+                            true,
+                        )
                         .field("downloads", &krate.downloads, true)
                         .timestamp(krate.updated.as_str())
                 });
