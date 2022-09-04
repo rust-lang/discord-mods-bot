@@ -216,7 +216,7 @@ async fn app() -> Result<(), Error> {
 
     cmds.add("?help", Command::help());
 
-    let mut client = Client::builder(&config.discord_token)
+    let mut client = Client::builder(&config.discord_token, GatewayIntents::default())
         .event_handler(Events {
             http: Arc::new(HttpClient::new()),
             db: pool.clone(),
