@@ -90,7 +90,7 @@ pub async fn temp_ban(args: Arc<Args>) -> Result<(), Error> {
         .get("reason")
         .ok_or("unable to retrieve reason param")?;
 
-    if let Some(guild) = args.msg.guild(&args.cx).await {
+    if let Some(guild) = args.msg.guild(&args.cx) {
         info!("Banning user from guild");
         let user = UserId::from(user_id);
 

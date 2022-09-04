@@ -39,5 +39,6 @@ features = [
     "model",
     "utils",
     "rustls_backend",
+    "chrono",
 ]
-version = "0.10"
+version = "0.11.5"

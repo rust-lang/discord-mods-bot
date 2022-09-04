@@ -25,8 +25,14 @@ pub async fn replay_message(
     db: Arc<PgPool>,
 ) -> Result<(), Error> {
     let age = ev.timestamp.and_then(|create| {
-        ev.edited_timestamp
-            .and_then(|edit| edit.signed_duration_since(create).to_std().ok())
+        ev.edited_timestamp.and_then(|edit| {
+            let edit_datetime = *edit;
+            let create_datetime = *create;
+            edit_datetime
+                .signed_duration_since(create_datetime)
+                .to_std()
+                .ok()
+        })
     });
 
     if age.is_some() && age.unwrap() < MESSAGE_AGE_MAX {

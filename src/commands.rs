@@ -196,7 +196,7 @@ impl Commands {
 
     pub async fn execute(&self, cx: Context, msg: Message, http: Arc<HttpClient>, db: Arc<PgPool>) {
         let message = &msg.content;
-        if !msg.is_own(&cx).await && message.starts_with(PREFIX) {
+        if !msg.is_own(&cx) && message.starts_with(PREFIX) {
             if let Some(matched) = self.state_machine.process(message) {
                 info!("Processing command: {}", message);
                 let args = Arc::new(Args {

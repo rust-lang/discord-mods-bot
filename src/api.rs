@@ -123,7 +123,7 @@ pub async fn slow_mode(args: Arc<Args>) -> Result<(), Error> {
 
         info!("Applying slowmode to channel {}", &channel_name);
         ChannelId::from_str(channel_name)?
-            .edit(&args.cx, |c| c.slow_mode_rate(*seconds))
+            .edit(&args.cx, |c| c.rate_limit_per_user(*seconds))
             .await?;
     }
     Ok(())
@@ -163,7 +163,7 @@ pub async fn kick(args: Arc<Args>) -> Result<(), Error> {
         )
         .ok_or("unable to retrieve user id")?;
 
-        if let Some(guild) = args.msg.guild(&args.cx).await {
+        if let Some(guild) = args.msg.guild(&args.cx) {
             info!("Kicking user from guild");
             guild.kick(&args.cx, UserId::from(user_id)).await?
         }
