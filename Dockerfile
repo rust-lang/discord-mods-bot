@@ -5,7 +5,7 @@
 #  Build image  #
 #################
 
-FROM ubuntu:bionic AS build
+FROM ubuntu:jammy AS build
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates \
@@ -44,7 +44,7 @@ RUN find src -name "*.rs" -exec touch {} \; && cargo build --release
 #  Output image  #
 ##################
 
-FROM ubuntu:bionic AS binary
+FROM ubuntu:jammy AS binary
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libpq-dev \
