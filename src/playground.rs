@@ -44,6 +44,7 @@ impl PlaygroundCode {
             Edition::E2015 => "2015",
             Edition::E2018 => "2018",
             Edition::E2021 => "2021",
+            Edition::E2024 => "2024",
         };
 
         let mode = match self.mode {
@@ -87,6 +88,8 @@ enum Edition {
     E2018,
     #[serde(rename = "2021")]
     E2021,
+    #[serde(rename = "2024")]
+    E2024,
 }
 
 impl FromStr for Edition {
@@ -97,6 +100,7 @@ impl FromStr for Edition {
             "2015" => Ok(Edition::E2015),
             "2018" => Ok(Edition::E2018),
             "2021" => Ok(Edition::E2021),
+            "2024" => Ok(Edition::E2024),
             _ => Err(format!("invalid edition `{}`", s).into()),
         }
     }
@@ -146,7 +150,7 @@ async fn run_code(args: Arc<Args>, code: String) -> Result<String, Error> {
         .map(|s| &s[..])
         .unwrap_or("nightly");
     let mode = args.params.get("mode").map(|s| &s[..]).unwrap_or("debug");
-    let edition = args.params.get("edition").map(|s| &s[..]).unwrap_or("2021");
+    let edition = args.params.get("edition").map(|s| &s[..]).unwrap_or("2024");
 
     let mut request = PlaygroundCode::new(code.clone());
 
@@ -249,7 +253,7 @@ pub async fn help(args: Arc<Args>, name: &str) -> Result<(), Error> {
 Optional arguments:
     \tmode: debug, release (default: debug)
     \tchannel: stable, beta, nightly (default: nightly)
-    \tedition: 2015, 2018, 2021 (default: 2021)
+    \tedition: 2015, 2018, 2021, 2024 (default: 2024)
     \twarn: boolean flag to enable compilation warnings
     ",
         name
